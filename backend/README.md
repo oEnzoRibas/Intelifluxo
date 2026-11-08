@@ -67,3 +67,22 @@ this increment does not satisfy or claim 2A-U02.
 The scheduler locks event rows in worker lock order, rechecks due time using PostgreSQL `clock_timestamp()` after the lock, and atomically increments the generation and inserts a unique `(event_id,generation)` retry publication. A pending released generation is not released again. The relay publishes outside the database transaction using the existing mandatory/confirm gate, then marks the row confirmed. Processing commits its disposition and processed marker before ack. Competing schedulers are supported; concurrent relays are not coordinated and may duplicate publications. Under the event lock, an older generation is acknowledged only with durable evidence: publication 1 proves generation 0's scheduled disposition was committed, while a positive generation requires its own processed marker. This relies on application-managed rows and the scheduler's atomic release invariant; direct database edits can violate it. Future generations and older deliveries without evidence fail closed and can stop the worker. No reaper or operator repair mechanism is provided.
 
 For a self-contained real-service demonstration, with the disposable URLs above set, run `npm run demo:retry`. It creates a uniquely named disposable schema and queue, submits synthetic input through the API, uses an internal-only handler seam to produce the first transient outcome, waits for the database deadline, and prints real persisted states and the consumed broker dispatch. It drops its own schema and queue afterwards. An interrupted run may leave those uniquely named resources. No producer payload can select a handler outcome.
+
+## Integrated demo and cleanup
+
+With dedicated disposable local PostgreSQL and RabbitMQ running and the URLs above explicitly set, run:
+
+```powershell
+$env:DEMO_LOCAL='1'
+npm run demo:integrated
+```
+
+The guard requires loopback service URLs without query parameters and explicit opt-in; loopback does not prove the services are disposable. The demo creates a random schema and queue, starts a temporary loopback API on an ephemeral port, and prints and checks each API state through confirmed generation 1, attempt 2 success. Its first transient outcome uses an internal test seam. Scheduler and relay are actual bounded sweeps, not background services. The API URL is available only while the command runs. No other processes should access the demo resources.
+
+Cleanup attempts each channel, connection and owned queue independently, even after failure. The schema and synthetic event are intentionally retained, including on failure, and the printed schema identifies them; an interrupted process may also leave its queue. After inspecting the printed schema and confirming it belongs only to this run, connect to the same disposable database and manually execute the following, replacing the identifier with the exact printed schema (never use a shared schema):
+
+```sql
+DROP SCHEMA "demo_replace_with_printed_schema" CASCADE;
+```
+
+This permanently deletes all objects and rows in that schema. Inspect broker ownership before manually removing any queue left by interruption. Do not run cleanup against shared or production resources.
