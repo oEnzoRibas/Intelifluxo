@@ -1,5 +1,6 @@
 import Fastify from "fastify";
 import type pg from "pg";
+import { automationRoutes } from "./automations.js";
 import { accept } from "./accept.js";
 import { requestSchema, type Input } from "./contract.js";
 
@@ -8,6 +9,7 @@ export function api(pool: pg.Pool) {
     bodyLimit: 8192,
     ajv: { customOptions: { removeAdditional: false, coerceTypes: false } },
   });
+  automationRoutes(app, pool);
   app.get("/status", async () => ({
     profile: "local-development-only",
     limitations: [
