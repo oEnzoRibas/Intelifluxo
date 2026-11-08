@@ -3,7 +3,11 @@ import type pg from "pg";
 import { content, type Input } from "./contract.js";
 import { transaction } from "./db.js";
 
-export async function accept(pool: pg.Pool, input: Input) {
+export async function accept(
+  pool: pg.Pool,
+  input: Input,
+  snapshotsEnabled = false,
+) {
   return transaction(pool, async (client) => {
     const id = randomUUID();
     const value = JSON.stringify(content(input));
@@ -22,6 +26,21 @@ export async function accept(pool: pg.Pool, input: Input) {
         replay: true,
         conflict: !existing.rows[0].same,
       };
+    }
+    if (snapshotsEnabled) {
+      // One statement observes a consistent snapshot of all current revisions.
+      await client.query(
+        "INSERT INTO event_automation_context(event_id,trigger_type) VALUES ($1,'receipt.v1')",
+        [id],
+      );
+      await client.query(
+        `INSERT INTO automation_executions(id,event_id,automation_id,revision,schema_version,trigger_type,action_type)
+       SELECT gen_random_uuid(),$1,d.id,r.revision,r.schema_version,r.trigger_type,r.action_type
+       FROM automation_definitions d JOIN automation_definition_revisions r
+       ON r.automation_id=d.id AND r.revision=d.current_revision
+       WHERE d.scope=$2 AND r.active AND r.trigger_type='receipt.v1'`,
+        [id, input.scope],
+      );
     }
     await client.query(
       "INSERT INTO target_snapshots VALUES ($1,'local-receipt',1)",
