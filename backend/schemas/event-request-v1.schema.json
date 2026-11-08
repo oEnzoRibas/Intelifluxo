@@ -1,0 +1,29 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "urn:intelifluxo:local:event-request:v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["scope", "idempotencyKey", "type", "target", "message"],
+  "properties": {
+    "scope": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[A-Za-z0-9_-]+(?![\\s\\S])"
+    },
+    "idempotencyKey": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9_-]+(?![\\s\\S])"
+    },
+    "type": { "type": "string", "const": "receipt.v1" },
+    "target": { "type": "string", "const": "local-receipt" },
+    "message": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024,
+      "pattern": "^[^\\u0000\\uD800-\\uDFFF]+$"
+    }
+  }
+}
