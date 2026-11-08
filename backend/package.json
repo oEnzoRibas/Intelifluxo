@@ -12,6 +12,7 @@
     "relay": "tsx src/relay-main.ts",
     "scheduler": "tsx src/scheduler-main.ts",
     "demo:retry": "tsx scripts/retry-demo.ts",
+    "demo:integrated": "tsx scripts/integrated-demo.ts",
     "worker": "tsx src/worker-main.ts",
     "test": "vitest run",
     "test:integration": "vitest run test/integration.test.ts test/scheduler.integration.test.ts",
