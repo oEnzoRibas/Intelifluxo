@@ -48,6 +48,16 @@ describe.skipIf(process.env.INTEGRATION !== "1")(
           "utf8",
         ),
       );
+      for (const file of [
+        "004_automation_definitions.sql",
+        "005_automation_executions.sql",
+      ])
+        await pool.query(
+          await readFile(
+            new URL(`../migrations/${file}`, import.meta.url),
+            "utf8",
+          ),
+        );
       connection = await connectBroker();
       confirm = await connection.createConfirmChannel();
     });
@@ -602,7 +612,12 @@ describe.skipIf(process.env.INTEGRATION !== "1")(
         });
         expect(valid.statusCode).toBe(202);
         const id = valid.json().id;
-        for (const table of ["outbox", "audit", "target_snapshots"]) {
+        for (const table of [
+          "outbox",
+          "audit",
+          "target_snapshots",
+          "event_automation_context",
+        ]) {
           await pool.query(`DELETE FROM ${table} WHERE event_id=$1`, [id]);
         }
         await pool.query("DELETE FROM events WHERE id=$1", [id]);
@@ -742,6 +757,10 @@ describe.skipIf(process.env.INTEGRATION !== "1")(
         await pool.query("DELETE FROM target_snapshots WHERE event_id=$1", [
           id,
         ]);
+        await pool.query(
+          "DELETE FROM event_automation_context WHERE event_id=$1",
+          [id],
+        );
         await pool.query("DELETE FROM events WHERE id=$1", [id]);
       } finally {
         await app.close();
