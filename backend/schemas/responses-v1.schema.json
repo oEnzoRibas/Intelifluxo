@@ -1,0 +1,142 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:intelifluxo:local:responses:v1",
+  "$defs": {
+    "acceptance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "replay"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "replay": {
+          "type": "boolean"
+        }
+      }
+    },
+    "query": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "scope",
+        "content",
+        "createdAt",
+        "publication",
+        "status",
+        "result",
+        "retry"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "scope": {
+          "type": "string"
+        },
+        "content": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "target", "message"],
+          "properties": {
+            "type": {
+              "const": "receipt.v1"
+            },
+            "target": {
+              "const": "local-receipt"
+            },
+            "message": {
+              "type": "string"
+            }
+          }
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "publication": {
+          "enum": ["pending", "confirmed"]
+        },
+        "status": {
+          "enum": [
+            "accepted",
+            "completed",
+            "retry_scheduled",
+            "retry_released",
+            "blocked"
+          ]
+        },
+        "result": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["kind", "eventId", "message"],
+              "properties": {
+                "kind": {
+                  "const": "local-receipt.v1"
+                },
+                "eventId": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "message": {
+                  "type": "string"
+                }
+              }
+            }
+          ]
+        },
+        "retry": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "generation",
+                "attempt",
+                "outcome",
+                "delayMs",
+                "nextEligibleAt",
+                "reason"
+              ],
+              "properties": {
+                "generation": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "attempt": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "outcome": {
+                  "enum": ["success", "transient", "permanent", "unknown"]
+                },
+                "delayMs": {
+                  "type": ["integer", "null"],
+                  "minimum": 1
+                },
+                "nextEligibleAt": {
+                  "type": ["string", "null"],
+                  "format": "date-time"
+                },
+                "reason": {
+                  "enum": [null, "permanent", "unknown", "exhausted"]
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}
