@@ -87,7 +87,21 @@ export async function processMessage(
       ).rowCount
     )
       return;
-    const outcome = options.handler ? await options.handler() : "success";
+    const executions = await client.query(
+      "SELECT id,schema_version,trigger_type,action_type FROM automation_executions WHERE event_id=$1",
+      [dispatch.eventId],
+    );
+    const supported = executions.rows.every(
+      (row) =>
+        row.schema_version === 1 &&
+        row.trigger_type === "receipt.v1" &&
+        row.action_type === "record-receipt.v1",
+    );
+    const outcome = supported
+      ? options.handler
+        ? await options.handler()
+        : "success"
+      : "unknown";
     const decision = decideRetry(
       options.policy ?? defaultPolicy,
       ordinal,
@@ -101,6 +115,10 @@ export async function processMessage(
       };
       await client.query(
         "INSERT INTO receipts(event_id,result) VALUES ($1,$2::jsonb) ON CONFLICT (event_id) DO NOTHING",
+        [dispatch.eventId, JSON.stringify(result)],
+      );
+      await client.query(
+        "UPDATE automation_executions SET result=$2::jsonb WHERE event_id=$1",
         [dispatch.eventId, JSON.stringify(result)],
       );
     }
