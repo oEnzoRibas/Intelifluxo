@@ -1,13 +1,23 @@
 import Fastify from "fastify";
 import type pg from "pg";
+import { automationRoutes } from "./automations.js";
 import { accept } from "./accept.js";
 import { requestSchema, type Input } from "./contract.js";
+import { executionRoutes } from "./executions.js";
+import { automationSnapshotsEnabled } from "./config.js";
 
-export function api(pool: pg.Pool) {
+export function api(
+  pool: pg.Pool,
+  snapshotsEnabled = automationSnapshotsEnabled(
+    process.env.AUTOMATION_SNAPSHOTS_ENABLED,
+  ),
+) {
   const app = Fastify({
     bodyLimit: 8192,
     ajv: { customOptions: { removeAdditional: false, coerceTypes: false } },
   });
+  automationRoutes(app, pool);
+  executionRoutes(app, pool);
   app.get("/status", async () => ({
     profile: "local-development-only",
     limitations: [
@@ -23,7 +33,7 @@ export function api(pool: pg.Pool) {
     "/events",
     { schema: { body: requestSchema } },
     async (request, reply) => {
-      const result = await accept(pool, request.body);
+      const result = await accept(pool, request.body, snapshotsEnabled);
       if (result.conflict)
         return reply.code(409).send({ error: "idempotency_conflict" });
       return reply

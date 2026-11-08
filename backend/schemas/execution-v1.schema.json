@@ -1,0 +1,117 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "execution-v1.schema.json",
+  "$defs": {
+    "uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?![\\s\\S])"
+    },
+    "execution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "eventId",
+        "automationId",
+        "revision",
+        "schemaVersion",
+        "trigger",
+        "action",
+        "createdAt",
+        "status",
+        "retry",
+        "result"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/uuid" },
+        "eventId": { "$ref": "#/$defs/uuid" },
+        "automationId": { "$ref": "#/$defs/uuid" },
+        "revision": { "type": "integer", "minimum": 1 },
+        "schemaVersion": { "type": "integer" },
+        "trigger": {
+          "type": "object",
+          "required": ["type"],
+          "additionalProperties": false,
+          "properties": { "type": { "type": "string" } }
+        },
+        "action": {
+          "type": "object",
+          "required": ["type"],
+          "additionalProperties": false,
+          "properties": { "type": { "type": "string" } }
+        },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "status": {
+          "enum": [
+            "accepted",
+            "retry_scheduled",
+            "retry_released",
+            "completed",
+            "blocked"
+          ]
+        },
+        "retry": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "generation",
+                "attempt",
+                "outcome",
+                "delayMs",
+                "nextEligibleAt",
+                "reason"
+              ],
+              "properties": {
+                "generation": { "type": "integer" },
+                "attempt": { "type": "integer" },
+                "outcome": { "type": "string" },
+                "delayMs": { "type": ["integer", "null"] },
+                "nextEligibleAt": { "type": ["string", "null"] },
+                "reason": { "type": ["string", "null"] }
+              }
+            }
+          ]
+        },
+        "result": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["kind", "eventId", "message"],
+              "properties": {
+                "kind": { "const": "local-receipt.v1" },
+                "eventId": { "$ref": "#/$defs/uuid" },
+                "message": { "type": "string" }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "list": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["items"],
+      "properties": {
+        "items": {
+          "type": "array",
+          "maxItems": 100,
+          "items": { "$ref": "#/$defs/execution" }
+        }
+      }
+    },
+    "listQuery": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "eventId": { "$ref": "#/$defs/uuid" },
+        "automationId": { "$ref": "#/$defs/uuid" }
+      },
+      "oneOf": [{ "required": ["eventId"] }, { "required": ["automationId"] }]
+    }
+  }
+}

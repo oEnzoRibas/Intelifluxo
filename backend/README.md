@@ -46,7 +46,7 @@ Acceptance inserts event/idempotency binding, fixed target snapshot (`local-rece
 
 `npm run format`, `npm run typecheck`, `npm test` run local checks. To include real services, set both URLs and `$env:INTEGRATION='1'`, then run `npm test` or `npm run test:integration`. The integration suite requires disposable dedicated database and broker services, permission to create and drop a schema, and no other processes using its randomly named resources. Each run creates an isolated schema and uniquely named application queue, and cleans up only those owned resources. An interrupted run can leave its test schema or queue behind; inspect ownership before manual cleanup. Never point it at shared or production infrastructure. Without opt-in, real-service tests are skipped. Tests include explicit return/confirm traces and a commit/ack barrier with actual broker redelivery; they do not implement all QA acceptance case variants or map any 176-fixture IDs. The offline check uses an unreachable endpoint and checks pending rows, not broker stop/restart or recovery.
 
-Logging is intentionally minimal: scheduler and relay emit structured sweep counts, worker reports consumption/error, and connection errors are sanitized. No metrics, tracing, dashboards, alerting, retention, operational repair or security monitoring are provided. The migration runner applies 001 through 003 using idempotent bootstrap SQL; it is not a production migration framework. Image tags are pinned but not digest-locked. No independent critical-change review has been performed by this subagent.
+Logging is intentionally minimal: scheduler and relay emit structured sweep counts, worker reports consumption/error, and connection errors are sanitized. No metrics, tracing, dashboards, alerting, retention, operational repair or security monitoring are provided. The migration runner applies 001 through 005 using idempotent bootstrap SQL; it is not a production migration framework. Image tags are pinned but not digest-locked. No independent critical-change review has been performed by this subagent.
 
 ## Increment 2A.1: persisted disposition, not retry execution
 
@@ -86,3 +86,34 @@ DROP SCHEMA "demo_replace_with_printed_schema" CASCADE;
 ```
 
 This permanently deletes all objects and rows in that schema. Inspect broker ownership before manually removing any queue left by interruption. Do not run cleanup against shared or production resources.
+
+# Automation definitions (layer 1)
+
+Definitions are versioned configuration; saving or activating one does not itself execute it. Matching and execution are separate, gated capabilities described below.
+`POST /automations` accepts `{"scope":"demo","name":"Receipt","schemaVersion":1,"trigger":{"type":"receipt.v1"},"action":{"type":"record-receipt.v1"}}` and returns 201 with inactive revision 1. Scope is immutable; name is 1–200 characters and scope 1–128, each requiring a non-whitespace character. Unknown properties are rejected.
+
+`GET /automations?scope=demo` returns `{ "items": [...] }`, ordered by UUID and limited to the first 100 (no pagination); `GET /automations/:id` returns the current revision. IDs use lowercase canonical UUID syntax. `PUT /automations/:id` accepts the full configuration (name, schemaVersion, trigger, action), plus boolean `active` and integer `expectedRevision`; it never accepts scope. Each successful update appends a revision, including activation and deactivation. Concurrent/stale writes return 409 `{"error":"revision_conflict"}`; missing IDs return 404 `{"error":"not_found"}`. Invalid input returns 400. Responses include `id`, `scope`, `revision`, `name`, `active`, `schemaVersion`, `trigger`, `action`, and ISO `createdAt`. There is no authentication or tenant isolation; scope is not an authorization boundary. Migration 004 is additive and only creates definition storage.
+
+# Automation execution query (local MVP)
+
+Automation snapshots are disabled by default. To enable them locally, after applying migrations and starting only compatible workers, set `$env:AUTOMATION_SNAPSHOTS_ENABLED='true'` in the API shell before starting the API. The only accepted values are exactly `true` and `false`; unset means false and any other value fails API startup. With the gate off, acceptance preserves legacy behavior and inserts no automation context or execution rows. Changing the environment requires restarting the API; replays do not acquire snapshots retroactively.
+
+For a coordinated cutover, deploy compatible API and workers with the gate off, drain old workers, and only then enable the gate on accepting APIs. For rollback, disable new snapshots on every accepting API and drain all pinned executions (including retries and blocked items requiring resolution) before rolling workers back. This is an operator procedure, not runtime deployment orchestration or an automated safety check; disabling the gate does not stop already pinned executions from processing. Do not roll back while pinned work remains.
+
+When enabled, new accepted receipt events snapshot matching active automation revisions for the
+same scope. Replays do not rematch. The snapshot is taken by a single database
+statement; a concurrent definition update may be observed before or after that
+statement. The worker records the existing deterministic local receipt as each
+execution's result in the same transaction as the event receipt and disposition.
+Unsupported pinned semantics block the event as an unknown outcome. This adds no
+external effects or exactly-once guarantee.
+
+`GET /executions/:id` accepts a lowercase UUID and returns 404 for an absent
+execution. `GET /executions?eventId=<uuid>` or
+`GET /executions?automationId=<uuid>` requires exactly one filter; it returns up
+to 100 items ordered by execution ID without pagination. Invalid IDs, unknown
+query properties and multiple filters return 400. See
+`schemas/execution-v1.schema.json` for the response and query shapes. Status and
+retry metadata derive from the existing event disposition; the result is null
+until completed. Historical revision and action data remain pinned when the
+definition changes. Legacy events have no executions.

@@ -21,6 +21,18 @@ try {
       "utf8",
     ),
   );
+  await pool.query(
+    await readFile(
+      new URL("../migrations/004_automation_definitions.sql", import.meta.url),
+      "utf8",
+    ),
+  );
+  await pool.query(
+    await readFile(
+      new URL("../migrations/005_automation_executions.sql", import.meta.url),
+      "utf8",
+    ),
+  );
   console.log("migration applied");
 } finally {
   await pool.end();
