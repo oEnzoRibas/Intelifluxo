@@ -104,5 +104,3 @@ ALTER TABLE automation_definition_revisions ADD CONSTRAINT automation_graph_vali
 ALTER TABLE automation_executions ADD CONSTRAINT automation_execution_result_valid_v2 CHECK (automation_result_guard_v2(schema_version, event_id, result) IS TRUE) NOT VALID;
 ALTER TABLE automation_executions ADD CONSTRAINT automation_execution_types_valid_v2 CHECK (schema_version <> 2 OR (trigger_type = 'receipt.v1' AND action_type = 'record-receipt.v1')) NOT VALID;
 
-
-
