@@ -1,4 +1,11 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import WorkflowBuilder from "./WorkflowBuilder";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
 import { ApiError, validId } from "./api";
 import {
   ConflictError,
@@ -36,11 +43,20 @@ export default function Automations({ route }: { route: string }) {
     kind: "loading",
   });
   const [refresh, setRefresh] = useState(0);
+  const [historyRefresh, setHistoryRefresh] = useState(0);
   const [pending, setPending] = useState(false);
+  const [builderBlocked, setBuilderBlocked] = useState(false);
   const [refreshingDetail, setRefreshingDetail] = useState(false);
   const [mutationError, setMutationError] = useState("");
   const mutation = useRef<AbortController | null>(null);
   const detailReadVersion = useRef(0);
+  const reportBuilderState = useCallback((blocked: boolean) => {
+    if (blocked) {
+      detailReadVersion.current++;
+      setRefreshingDetail(false);
+    }
+    setBuilderBlocked(blocked);
+  }, []);
   const scopeInput = useRef<HTMLInputElement>(null);
   const nameInput = useRef<HTMLInputElement>(null);
   const id = route.startsWith("#automations/")
@@ -105,6 +121,11 @@ export default function Automations({ route }: { route: string }) {
           setRefreshingDetail(false);
         }
       });
+    return () => controller.abort();
+  }, [id, create, refresh]);
+  useEffect(() => {
+    if (!id || create || !validId(id)) return;
+    const controller = new AbortController();
     listExecutions(id, controller.signal)
       .then((data) => {
         if (!controller.signal.aborted) setHistory({ kind: "ready", data });
@@ -114,7 +135,7 @@ export default function Automations({ route }: { route: string }) {
           setHistory({ kind: "error", message: message(e) });
       });
     return () => controller.abort();
-  }, [id, create, refresh]);
+  }, [id, create, refresh, historyRefresh]);
   function reload(preserveDetail = false) {
     if (pending) return;
     setMutationError("");
@@ -407,7 +428,11 @@ export default function Automations({ route }: { route: string }) {
                   Action: record-receipt.v1
                 </p>
                 <button
-                  disabled={pending || !!mutationError}
+                  disabled={
+                    pending ||
+                    !!mutationError ||
+                    (!detail.data.active && builderBlocked)
+                  }
                   onClick={() => toggle(detail.data)}
                 >
                   {pending
@@ -430,6 +455,16 @@ export default function Automations({ route }: { route: string }) {
                   </>
                 )}
               </section>
+              <WorkflowBuilder
+                key={`${detail.data.id}-${detail.data.revision}`}
+                definition={detail.data}
+                onDirty={reportBuilderState}
+                busy={pending}
+                onSaved={(updated) => {
+                  detailReadVersion.current++;
+                  setDetail({ kind: "ready", data: updated });
+                }}
+              />
               <section className="panel" aria-live="polite">
                 <h2>Execution history</h2>
                 {history.kind === "loading" ? (
@@ -437,7 +472,13 @@ export default function Automations({ route }: { route: string }) {
                 ) : history.kind === "error" ? (
                   <>
                     <p role="alert">{history.message}</p>
-                    <button disabled={pending} onClick={() => reload()}>
+                    <button
+                      disabled={pending}
+                      onClick={() => {
+                        setHistory({ kind: "loading" });
+                        setHistoryRefresh((x) => x + 1);
+                      }}
+                    >
                       Retry
                     </button>
                   </>
@@ -490,7 +531,10 @@ export default function Automations({ route }: { route: string }) {
                     </p>
                   </>
                 )}
-                <button disabled={pending} onClick={() => reload(true)}>
+                <button
+                  disabled={pending || builderBlocked}
+                  onClick={() => reload(true)}
+                >
                   Refresh
                 </button>
               </section>
