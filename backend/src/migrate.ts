@@ -48,6 +48,15 @@ try {
       "utf8",
     ),
   );
+  await pool.query(
+    await readFile(
+      new URL(
+        "../migrations/008_immutable_event_and_execution.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  );
   console.log("migration applied");
 } finally {
   await pool.end();
