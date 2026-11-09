@@ -4,6 +4,8 @@ Status: MVP contract accepted by Lead; implementation in the current worktree is
 
 ## Layer 1: definition metadata
 
+Proposed next slice: [ADR 0002](../adr/0002-persistent-visual-workflow-graph.md) specifies a revision-local persistent visual graph and API compatibility plan. It is not implemented or approved by this architecture record. Current definition storage is relational (migration 004), not definition JSON; graph persistence requires an additive migration. Condition placeholders, if exposed, are draft-only and non-activatable; executable Condition and ViaCEP remain out of scope.
+
 The backend has definition and immutable revision tables and API routes. A definition has an immutable scope and a current revision; revision 1 is inactive. Updates require `expectedRevision`, lock the definition row, append the next revision and advance the current pointer; stale writes return 409. Database triggers guard revisions and pointer advancement. The API accepts schema version 1, trigger `receipt.v1` and action `record-receipt.v1`. The list endpoint returns at most 100 current definitions for a scope. See [definition routes](../../backend/src/automations.ts) and [migration 004](../../backend/migrations/004_automation_definitions.sql). Scope is caller-supplied, not an authorization boundary.
 
 ## Layer 2: acceptance and execution

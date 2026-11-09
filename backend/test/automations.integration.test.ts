@@ -25,6 +25,12 @@ describe.skipIf(process.env.INTEGRATION !== "1")(
       );
       await pool.query(migration);
       await pool.query(migration);
+      const graphMigration = await readFile(
+        new URL("../migrations/006_automation_graph.sql", import.meta.url),
+        "utf8",
+      );
+      await pool.query(graphMigration);
+      await pool.query(graphMigration);
     });
     afterAll(async () => {
       await pool?.end();
