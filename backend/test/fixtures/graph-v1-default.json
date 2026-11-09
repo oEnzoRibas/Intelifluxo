@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "nodes": [
+    {
+      "id": "trigger",
+      "kind": "trigger",
+      "type": "receipt.v1",
+      "position": { "x": 0, "y": 0 }
+    },
+    {
+      "id": "action",
+      "kind": "action",
+      "type": "record-receipt.v1",
+      "position": { "x": 320, "y": 0 }
+    }
+  ],
+  "edges": [{ "source": "trigger", "target": "action" }]
+}
