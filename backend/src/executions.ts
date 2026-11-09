@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import type pg from "pg";
 import { params } from "./automations.js";
+import { executionResultStatus } from "./execution-result.js";
 
 const uuid = params.properties.id;
 const query = {
@@ -34,6 +35,23 @@ type Row = {
   processed_at: Date | null;
 };
 function output(row: Row) {
+  const actionStatus = executionResultStatus(
+    row.schema_version,
+    row.event_id,
+    row.result,
+  );
+  const ignored = actionStatus === "ignored";
+  if (
+    (row.state === "completed" && actionStatus !== "executed" && !ignored) ||
+    (actionStatus === "executed" &&
+      row.state !== null &&
+      row.state !== "completed") ||
+    (actionStatus === "pending" && row.state !== "retry_scheduled") ||
+    (actionStatus === "not_executed" && row.state !== "blocked") ||
+    (row.state !== null &&
+      !["completed", "retry_scheduled", "blocked"].includes(row.state))
+  )
+    throw new Error("execution invariant");
   return {
     id: row.id,
     eventId: row.event_id,
@@ -43,12 +61,14 @@ function output(row: Row) {
     trigger: { type: row.trigger_type },
     action: { type: row.action_type },
     createdAt: row.created_at.toISOString(),
-    status:
-      row.publication_generation && !row.processed_at
+    status: ignored
+      ? "ignored"
+      : row.publication_generation && !row.processed_at
         ? "retry_released"
         : (row.state ?? (row.result ? "completed" : "accepted")),
     retry: row.state
       ? {
+          scope: "event",
           generation: row.generation,
           attempt: row.attempt,
           outcome: row.outcome,
@@ -69,19 +89,27 @@ export function executionRoutes(app: FastifyInstance, pool: pg.Pool) {
         request.params.id,
       ]);
       if (!result.rowCount) return reply.code(404).send({ error: "not_found" });
-      return output(result.rows[0]);
+      try {
+        return output(result.rows[0]);
+      } catch {
+        return reply.code(503).send({ error: "unavailable" });
+      }
     },
   );
   app.get<{ Querystring: { eventId?: string; automationId?: string } }>(
     "/executions",
     { schema: { querystring: query } },
-    async (request) => {
+    async (request, reply) => {
       const eventFilter = request.query.eventId !== undefined;
       const result = await pool.query<Row>(
         `${select} WHERE x.${eventFilter ? "event_id" : "automation_id"}=$1 ORDER BY x.id LIMIT 100`,
         [eventFilter ? request.query.eventId : request.query.automationId],
       );
-      return { items: result.rows.map(output) };
+      try {
+        return { items: result.rows.map(output) };
+      } catch {
+        return reply.code(503).send({ error: "unavailable" });
+      }
     },
   );
 }
