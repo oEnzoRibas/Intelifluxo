@@ -17,20 +17,37 @@ const valid = {
   action: { type: "record-receipt.v1" },
 };
 describe("automation request validation", () => {
-  it("publishes the schemas used by the routes", async () => {
+  it("publishes the route fields and the stricter graph contract", async () => {
     const contract = JSON.parse(
       await readFile(
         new URL("../schemas/automation-v1.schema.json", import.meta.url),
         "utf8",
       ),
     );
-    expect(contract.definitions).toEqual({
-      create: createSchema,
-      update: updateSchema,
+    expect({
+      params: contract.definitions.params,
+      query: contract.definitions.query,
+    }).toEqual({
       params,
       query,
-      response,
     });
+    // Graphs are validated separately by the routes to retain graph-specific
+    // errors; the published schema additionally encodes those constraints.
+    for (const [name, route] of [
+      ["create", createSchema],
+      ["update", updateSchema],
+      ["response", response],
+    ] as const) {
+      const published = contract.definitions[name];
+      const { graph: publishedGraph, ...publishedFields } =
+        published.properties;
+      const { graph: routeGraph, ...routeFields } = route.properties;
+      expect(publishedFields).toEqual(routeFields);
+      expect(published.required).toEqual(route.required);
+      expect(publishedGraph.anyOf[0]).toEqual(routeGraph.anyOf[0]);
+      expect(publishedGraph.anyOf[1].properties.version).toEqual({ const: 2 });
+      if (name !== "response") expect(published.allOf).toHaveLength(2);
+    }
   });
   it("rejects invalid configurations before accessing storage", async () => {
     const app = api({} as pg.Pool);
