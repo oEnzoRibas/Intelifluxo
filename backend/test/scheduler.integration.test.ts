@@ -34,6 +34,7 @@ describe.skipIf(process.env.INTEGRATION !== "1")(
         "003_retry_publications.sql",
         "004_automation_definitions.sql",
         "005_automation_executions.sql",
+        "006_automation_graph.sql",
       ])
         await pool.query(
           await readFile(

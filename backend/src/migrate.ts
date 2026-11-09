@@ -33,6 +33,21 @@ try {
       "utf8",
     ),
   );
+  await pool.query(
+    await readFile(
+      new URL("../migrations/006_automation_graph.sql", import.meta.url),
+      "utf8",
+    ),
+  );
+  await pool.query(
+    await readFile(
+      new URL(
+        "../migrations/007_validate_automation_graph.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  );
   console.log("migration applied");
 } finally {
   await pool.end();

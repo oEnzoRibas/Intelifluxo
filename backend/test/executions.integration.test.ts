@@ -8,6 +8,7 @@ import { handleMessage, processMessage } from "../src/worker.js";
 import { connectBroker } from "../src/broker.js";
 import { relayOnce } from "../src/relay.js";
 import { scheduleOnce } from "../src/scheduler.js";
+import { defaultGraph } from "../src/graph.js";
 
 describe.skipIf(process.env.INTEGRATION !== "1")(
   "automation executions",
@@ -27,6 +28,8 @@ describe.skipIf(process.env.INTEGRATION !== "1")(
         "003_retry_publications.sql",
         "004_automation_definitions.sql",
         "005_automation_executions.sql",
+        "006_automation_graph.sql",
+        "007_validate_automation_graph.sql",
         "005_automation_executions.sql",
       ])
         await pool.query(
@@ -77,10 +80,12 @@ describe.skipIf(process.env.INTEGRATION !== "1")(
         trigger: { type: "receipt.v1" },
         action: { type: "record-receipt.v1" },
       };
+      const graph = defaultGraph();
+      graph.nodes[0].position.x = 123;
       const created = await app.inject({
         method: "POST",
         url: "/automations",
-        payload: { ...config, scope: "demo" },
+        payload: { ...config, scope: "demo", graph },
       });
       const automationId = created.json().id;
       const second = await app.inject({
@@ -139,6 +144,14 @@ describe.skipIf(process.env.INTEGRATION !== "1")(
         status: "accepted",
         result: null,
       });
+      expect(
+        (
+          await pool.query(
+            "SELECT graph FROM automation_definition_revisions WHERE automation_id=$1 AND revision=$2",
+            [automationId, first.revision],
+          )
+        ).rows[0].graph,
+      ).toEqual(graph);
       expect(
         (
           await app.inject({
