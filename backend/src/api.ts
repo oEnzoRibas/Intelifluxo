@@ -4,12 +4,18 @@ import { automationRoutes } from "./automations.js";
 import { accept } from "./accept.js";
 import { requestSchema, validEventData, type Input } from "./contract.js";
 import { executionRoutes } from "./executions.js";
-import { automationSnapshotsEnabled } from "./config.js";
+import {
+  automationSnapshotsEnabled,
+  conditionsWritesEnabled,
+} from "./config.js";
 
 export function api(
   pool: pg.Pool,
   snapshotsEnabled = automationSnapshotsEnabled(
     process.env.AUTOMATION_SNAPSHOTS_ENABLED,
+  ),
+  conditionsEnabled = conditionsWritesEnabled(
+    process.env.CONDITIONS_WRITES_ENABLED,
   ),
 ) {
   const app = Fastify({
@@ -30,7 +36,7 @@ export function api(
       }
       return reply.send(error);
     });
-    automationRoutes(automations, pool);
+    automationRoutes(automations, pool, conditionsEnabled);
   });
   executionRoutes(app, pool);
   app.get("/status", async () => ({
