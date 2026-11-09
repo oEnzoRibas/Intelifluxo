@@ -31,3 +31,19 @@ Dependency audit after upgrading Vitest from 4.0.14 to 4.1.12: `npm audit` repor
 ### Handoff notes
 
 The existing application color tokens are retained. The automation handoff's apparent theme difference needs design confirmation before any product-wide theme change. Execution-history links prefill Event Explorer; operators explicitly select Look up event to retrieve the snapshot.
+
+## Visual builder handoff gaps (ADR 0002)
+
+The builder is not implemented or enabled in this frontend. Pages 08/09 of the
+OpenPencil handoff show editable, persistent node labels, but graph v1 has no
+label field and rejects extra properties; labels cannot be persisted under the
+accepted contract. The design's Condition is planning-only, not executable;
+ViaCEP is future/unavailable. The empty and disconnected editor states are
+local-only: the API accepts complete paths only. Saving an active head inactive
+requires an explicit warning because there is no separate draft head. The
+handoff's sample values are illustrative, not real service data.
+
+The transitional reader distinguishes `legacy-default` from `server` graph
+content; the former is deterministic materialization, not evidence that graph
+persistence is deployed. Graph editing must stay disabled until the upgraded
+API capability is confirmed and old writers are fenced as described in ADR 0002.

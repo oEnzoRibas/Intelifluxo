@@ -2,6 +2,12 @@ import { randomUUID } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import type pg from "pg";
 import { transaction } from "./db.js";
+import {
+  defaultGraph,
+  graphShape,
+  graphSemantics,
+  type Graph,
+} from "./graph.js";
 
 // PostgreSQL text cannot store NUL or unpaired UTF-16 surrogates.
 const textPattern =
@@ -30,11 +36,77 @@ const fields = {
   trigger: fixed("receipt.v1"),
   action: fixed("record-receipt.v1"),
 };
+const graphSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: ["version", "nodes", "edges"],
+  properties: {
+    version: { const: 1 },
+    nodes: {
+      type: "array",
+      minItems: 2,
+      maxItems: 3,
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["id", "kind", "type", "position"],
+        properties: {
+          id: { type: "string", pattern: "^[A-Za-z][A-Za-z0-9_-]{0,63}$" },
+          kind: { type: "string" },
+          type: { type: "string" },
+          position: {
+            type: "object",
+            additionalProperties: false,
+            required: ["x", "y"],
+            properties: {
+              x: { type: "number", minimum: -10000, maximum: 10000 },
+              y: { type: "number", minimum: -10000, maximum: 10000 },
+            },
+          },
+        },
+        oneOf: [
+          {
+            properties: {
+              kind: { const: "trigger" },
+              type: { const: "receipt.v1" },
+            },
+          },
+          {
+            properties: {
+              kind: { const: "action" },
+              type: { const: "record-receipt.v1" },
+            },
+          },
+          {
+            properties: {
+              kind: { const: "condition" },
+              type: { const: "condition-placeholder.v1" },
+            },
+          },
+        ],
+      },
+    },
+    edges: {
+      type: "array",
+      minItems: 1,
+      maxItems: 2,
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["source", "target"],
+        properties: {
+          source: { type: "string", pattern: "^[A-Za-z][A-Za-z0-9_-]{0,63}$" },
+          target: { type: "string", pattern: "^[A-Za-z][A-Za-z0-9_-]{0,63}$" },
+        },
+      },
+    },
+  },
+};
 export const createSchema = {
   type: "object",
   additionalProperties: false,
   required: ["scope", ...Object.keys(fields)],
-  properties: { scope, ...fields },
+  properties: { scope, ...fields, graph: graphSchema },
 };
 export const updateSchema = {
   type: "object",
@@ -44,6 +116,7 @@ export const updateSchema = {
     expectedRevision: { type: "integer", minimum: 1, maximum: 2147483646 },
     active: { type: "boolean" },
     ...fields,
+    graph: graphSchema,
   },
 };
 export const params = {
@@ -77,6 +150,7 @@ export const response = {
     "trigger",
     "action",
     "createdAt",
+    "graph",
   ],
   properties: {
     id: { type: "string" },
@@ -88,6 +162,7 @@ export const response = {
     trigger: fixed("receipt.v1"),
     action: fixed("record-receipt.v1"),
     createdAt: { type: "string" },
+    graph: graphSchema,
   },
 };
 type Input = {
@@ -95,6 +170,7 @@ type Input = {
   schemaVersion: 1;
   trigger: { type: "receipt.v1" };
   action: { type: "record-receipt.v1" };
+  graph?: Graph;
 };
 type Create = Input & { scope: string };
 type Update = Input & { expectedRevision: number; active: boolean };
@@ -108,8 +184,9 @@ type Row = {
   trigger_type: string;
   action_type: string;
   created_at: Date;
+  graph: Graph | null;
 };
-const select = `SELECT d.id,d.scope,r.revision,r.name,r.active,r.schema_version,r.trigger_type,r.action_type,r.created_at FROM automation_definitions d JOIN automation_definition_revisions r ON r.automation_id=d.id AND r.revision=d.current_revision`;
+const select = `SELECT d.id,d.scope,r.revision,r.name,r.active,r.schema_version,r.trigger_type,r.action_type,r.created_at,r.graph FROM automation_definitions d JOIN automation_definition_revisions r ON r.automation_id=d.id AND r.revision=d.current_revision`;
 function output(row: Row) {
   return {
     id: row.id,
@@ -121,6 +198,7 @@ function output(row: Row) {
     trigger: { type: row.trigger_type },
     action: { type: row.action_type },
     createdAt: row.created_at.toISOString(),
+    graph: row.graph ?? defaultGraph(),
   };
 }
 async function insertRevision(
@@ -129,9 +207,10 @@ async function insertRevision(
   revision: number,
   input: Input,
   active: boolean,
+  graph: Graph,
 ) {
   await client.query(
-    `INSERT INTO automation_definition_revisions (automation_id,revision,name,active,schema_version,trigger_type,action_type) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+    `INSERT INTO automation_definition_revisions (automation_id,revision,name,active,schema_version,trigger_type,action_type,graph) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
     [
       id,
       revision,
@@ -140,21 +219,42 @@ async function insertRevision(
       input.schemaVersion,
       input.trigger.type,
       input.action.type,
+      JSON.stringify(graph),
     ],
   );
 }
 export function automationRoutes(app: FastifyInstance, pool: pg.Pool) {
+  // Graph shape is validated separately to preserve graph-specific error codes.
+  const bodySchema = (schema: typeof createSchema | typeof updateSchema) => ({
+    ...schema,
+    properties: { ...schema.properties, graph: {} },
+  });
   app.post<{ Body: Create }>(
     "/automations",
-    { schema: { body: createSchema, response: { 201: response } } },
+    { schema: { body: bodySchema(createSchema), response: { 201: response } } },
     async (request, reply) => {
+      const graph =
+        request.body.graph === undefined ? defaultGraph() : request.body.graph;
+      const issues = graphShape(graph);
+      if (issues.length)
+        return reply.code(400).send({ error: "validation_failed", issues });
+      const semantic = graphSemantics(
+        graph,
+        false,
+        request.body.trigger.type,
+        request.body.action.type,
+      );
+      if (semantic.length)
+        return reply
+          .code(400)
+          .send({ error: "validation_failed", issues: semantic });
       const id = randomUUID();
       const row = await transaction(pool, async (client) => {
         await client.query(
           "INSERT INTO automation_definitions(id,scope,current_revision) VALUES ($1,$2,1)",
           [id, request.body.scope],
         );
-        await insertRevision(client, id, 1, request.body, false);
+        await insertRevision(client, id, 1, request.body, false, graph);
         return (await client.query<Row>(`${select} WHERE d.id=$1`, [id]))
           .rows[0];
       });
@@ -196,8 +296,19 @@ export function automationRoutes(app: FastifyInstance, pool: pg.Pool) {
   );
   app.put<{ Params: { id: string }; Body: Update }>(
     "/automations/:id",
-    { schema: { params, body: updateSchema, response: { 200: response } } },
+    {
+      schema: {
+        params,
+        body: bodySchema(updateSchema),
+        response: { 200: response },
+      },
+    },
     async (request, reply) => {
+      if (request.body.graph !== undefined) {
+        const issues = graphShape(request.body.graph);
+        if (issues.length)
+          return reply.code(400).send({ error: "validation_failed", issues });
+      }
       const result = await transaction(pool, async (client) => {
         const current = await client.query<{ current_revision: number }>(
           "SELECT current_revision FROM automation_definitions WHERE id=$1 FOR UPDATE",
@@ -206,6 +317,18 @@ export function automationRoutes(app: FastifyInstance, pool: pg.Pool) {
         if (!current.rowCount) return { error: "not_found" as const };
         if (current.rows[0].current_revision !== request.body.expectedRevision)
           return { error: "revision_conflict" as const };
+        const existing = await client.query<Row>(`${select} WHERE d.id=$1`, [
+          request.params.id,
+        ]);
+        const graph =
+          request.body.graph ?? existing.rows[0].graph ?? defaultGraph();
+        const issues = graphSemantics(
+          graph,
+          request.body.active,
+          request.body.trigger.type,
+          request.body.action.type,
+        );
+        if (issues.length) return { issues };
         const next = request.body.expectedRevision + 1;
         await insertRevision(
           client,
@@ -213,6 +336,7 @@ export function automationRoutes(app: FastifyInstance, pool: pg.Pool) {
           next,
           request.body,
           request.body.active,
+          graph,
         );
         await client.query(
           "UPDATE automation_definitions SET current_revision=$2 WHERE id=$1",
@@ -226,6 +350,10 @@ export function automationRoutes(app: FastifyInstance, pool: pg.Pool) {
           ).rows[0],
         };
       });
+      if ("issues" in result && result.issues)
+        return reply
+          .code(400)
+          .send({ error: "validation_failed", issues: result.issues });
       if ("error" in result)
         return reply
           .code(result.error === "not_found" ? 404 : 409)

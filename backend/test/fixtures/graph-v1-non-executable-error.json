@@ -1,0 +1,10 @@
+{
+  "error": "validation_failed",
+  "issues": [
+    {
+      "code": "non_executable_graph",
+      "path": "/graph/nodes/1",
+      "nodeId": "condition"
+    }
+  ]
+}

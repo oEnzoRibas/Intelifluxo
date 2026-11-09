@@ -1,3 +1,4 @@
+import { defaultGraph } from "./workflow-graph";
 import { it, expect, vi } from "vitest";
 import {
   act,
@@ -19,6 +20,7 @@ it("keeps a successful update when an older refresh resolves afterward", async (
     schemaVersion: 1,
     trigger: { type: "receipt.v1" },
     action: { type: "record-receipt.v1" },
+    graph: defaultGraph(),
     createdAt: "2026-01-01T00:00:00Z",
   };
   const json = (data: unknown) => new Response(JSON.stringify(data));
@@ -48,9 +50,7 @@ it("keeps a successful update when an older refresh resolves afterward", async (
     ).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
     await waitFor(() => expect(reads).toBe(2));
-    expect(screen.getByRole("status")).toHaveTextContent(
-      "Refreshing automation",
-    );
+    expect(screen.getByText("Refreshing automation.")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Activate" }));
     expect(
       await screen.findByRole("button", { name: "Deactivate" }),
@@ -84,6 +84,7 @@ it("ignores a late definition response after navigation", async () => {
     schemaVersion: 1,
     trigger: { type: "receipt.v1" },
     action: { type: "record-receipt.v1" },
+    graph: defaultGraph(),
     createdAt: "2026-01-01T00:00:00Z",
   });
   let resolveFirst!: (response: Response) => void;
@@ -121,6 +122,7 @@ it("does not display a previous definition or its history while navigating betwe
     schemaVersion: 1,
     trigger: { type: "receipt.v1" },
     action: { type: "record-receipt.v1" },
+    graph: defaultGraph(),
     createdAt: "2026-01-01T00:00:00Z",
   };
   const json = (data: unknown) => new Response(JSON.stringify(data));
@@ -142,5 +144,53 @@ it("does not display a previous definition or its history while navigating betwe
     screen.queryByRole("button", { name: "Activate" }),
   ).not.toBeInTheDocument();
   expect(screen.getByRole("status")).toHaveTextContent("Loading automation");
+  vi.unstubAllGlobals();
+});
+
+it("blocks activation for a dirty graph and for a saved condition placeholder", async () => {
+  const id = "11111111-1111-1111-1111-111111111111";
+  const record = {
+    id,
+    name: "Definition",
+    scope: "scope",
+    revision: 1,
+    active: false,
+    schemaVersion: 1,
+    trigger: { type: "receipt.v1" },
+    action: { type: "record-receipt.v1" },
+    graph: defaultGraph(),
+    createdAt: "2026-01-01T00:00:00Z",
+  };
+  vi.stubGlobal(
+    "fetch",
+    vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).includes("executions"))
+        return Promise.resolve(new Response(JSON.stringify({ items: [] })));
+      if (init?.method === "PUT")
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              ...record,
+              revision: 2,
+              graph: JSON.parse(String(init.body)).graph,
+            }),
+          ),
+        );
+      return Promise.resolve(new Response(JSON.stringify(record)));
+    }),
+  );
+  render(<Automations route={`#automations/${id}`} />);
+  const activate = await screen.findByRole("button", { name: "Activate" });
+  await waitFor(() => expect(activate).toBeEnabled());
+  fireEvent.click(
+    screen.getByRole("button", { name: "+ Condition (placeholder)" }),
+  );
+  expect(activate).toBeDisabled();
+  fireEvent.click(
+    screen.getByRole("button", { name: "Connect through condition" }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Save workflow" }));
+  await screen.findByText(/Inactive .* revision 2/);
+  expect(screen.getByRole("button", { name: "Activate" })).toBeDisabled();
   vi.unstubAllGlobals();
 });

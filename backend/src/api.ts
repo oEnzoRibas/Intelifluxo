@@ -1,4 +1,4 @@
-import Fastify from "fastify";
+import Fastify, { type FastifyError } from "fastify";
 import type pg from "pg";
 import { automationRoutes } from "./automations.js";
 import { accept } from "./accept.js";
@@ -16,7 +16,22 @@ export function api(
     bodyLimit: 8192,
     ajv: { customOptions: { removeAdditional: false, coerceTypes: false } },
   });
-  automationRoutes(app, pool);
+  app.register(async (automations) => {
+    automations.setErrorHandler((error, _request, reply) => {
+      const validation = (error as FastifyError).validation;
+      if (validation) {
+        const issues = validation
+          .map((issue) => ({
+            code: "invalid_shape",
+            path: issue.instancePath || "/",
+          }))
+          .sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+        return reply.code(400).send({ error: "validation_failed", issues });
+      }
+      return reply.send(error);
+    });
+    automationRoutes(automations, pool);
+  });
   executionRoutes(app, pool);
   app.get("/status", async () => ({
     profile: "local-development-only",

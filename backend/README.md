@@ -143,3 +143,17 @@ cleanup steps have deadlines; timed-out broker operations destroy the underlying
 connection where available. Cleanup reports failures and continues to the schema
 step. A timeout or interruption can still leave a queue or schema; inspect and
 remove only resources belonging to that run on the disposable services.
+
+### Visual graph revision contract
+
+Migration `006_automation_graph.sql` adds a nullable, immutable revision-local graph. SQL NULL is read as the canonical two-node receipt graph; upgraded writes persist the effective graph. `POST /automations` and `PUT /automations/:id` accept an optional graph for legacy requests, while all definition responses include it. An omitted PUT graph preserves the current graph under the revision lock. Graph validation returns `400 {"error":"validation_failed","issues":[...]}`; stale revisions retain 409. A condition placeholder is draft-only and cannot be activated. Execution remains the existing receipt projection, not graph traversal. The 8192-byte body limit remains in force.
+
+Deploy a transitional graph-aware reader before this API and fence old definition writers before graph editing: old binaries can discard graph state. Keep graph-aware backend writes enabled during UI rollback; a backend downgrade requires independently reviewed write fencing or preservation. The local scope field is not authorization. No graph-specific metrics are currently exported; avoid logging graph payloads, and arrange operational instrumentation before production use.
+
+# Graph migration rollout (006–007)
+
+Migration 006 adds a nullable column and installs the graph check `NOT VALID`; new or updated rows are checked immediately, while existing rows are not scanned under the stronger table lock. The runner submits each migration file separately, so 006 commits before 007 validates existing rows under a weaker `SHARE UPDATE EXCLUSIVE` lock. Do not wrap both files in one transaction. The runner replays migrations and stops on error; if 007 fails, 006 remains committed and the check remains enforced for new writes. Investigate the error or offending rows and rerun; validation is repeatable. Fresh installations run both stages too.
+
+Before applying, inventory long transactions and concurrent maintenance, schedule a suitable window, and choose `lock_timeout` and `statement_timeout` for the environment (for example via PostgreSQL `PGOPTIONS` on the migration process); no production timeout is prescribed here. A timeout aborts the current migration query: check constraint validation state in `pg_constraint.convalidated` and retry after resolving blockers. Validation scans the revisions table and can consume I/O; assess table size and monitor locks and load. Earlier migrations are also replayed by this runner and need their own rollout assessment.
+
+SQL NULL graph is intentionally accepted for legacy revisions and compatibility with old writers. It is materialized as the default graph on read, not backfilled. Before relying on graph persistence, fence all old API/writer instances and any direct database writers through the deployment/access-control process; otherwise they can still insert NULL graphs and silently lose graph intent. The migration itself does not enforce fencing or prevent future NULL writes. There is no graph-specific metrics/tracing abstraction in this backend; graph validation/rollout telemetry remains a gap.

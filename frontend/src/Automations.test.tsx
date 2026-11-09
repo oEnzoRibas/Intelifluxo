@@ -1,3 +1,4 @@
+import { defaultGraph } from "./workflow-graph";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   cleanup,
@@ -13,6 +14,9 @@ import {
   listDefinitions,
   updateDefinition,
   validText,
+  saveGraph,
+  ValidationError,
+  validationIssues,
 } from "./automation-api";
 const id = "11111111-1111-1111-1111-111111111111";
 const eventId = "22222222-2222-2222-2222-222222222222";
@@ -25,6 +29,7 @@ const d = {
   schemaVersion: 1,
   trigger: { type: "receipt.v1" },
   action: { type: "record-receipt.v1" },
+  graph: defaultGraph(),
   createdAt: "2026-01-01T00:00:00.000Z",
 };
 const x = {
@@ -50,8 +55,39 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 describe("automation response contracts", () => {
+  it("distinguishes exact validation envelopes from ambiguous responses", async () => {
+    const issues = [{ code: "invalid_topology", path: "/graph/edges" }];
+    expect(validationIssues({ error: "validation_failed", issues })).toEqual(
+      issues,
+    );
+    expect(
+      validationIssues({ error: "validation_failed", issues, extra: true }),
+    ).toBeNull();
+    expect(
+      validationIssues({
+        error: "validation_failed",
+        issues: [{ code: "bad", path: 1 }],
+      }),
+    ).toBeNull();
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        response({ error: "validation_failed", issues }, 400),
+      )
+      .mockResolvedValueOnce(response({ error: "other" }, 400));
+    await expect(
+      saveGraph(definition(d), d.graph, new AbortController().signal),
+    ).rejects.toBeInstanceOf(ValidationError);
+    await expect(
+      saveGraph(definition(d), d.graph, new AbortController().signal),
+    ).rejects.not.toBeInstanceOf(ValidationError);
+    fetchMock.mockRestore();
+  });
   it("accepts definition and execution payloads", () => {
-    expect(definition(d)).toEqual(d);
+    expect(definition(d)).toMatchObject({
+      ...d,
+      graphSource: "server",
+    });
     expect(execution(x)).toEqual(x);
   });
   it.each([
@@ -108,6 +144,54 @@ describe("automation response contracts", () => {
   });
 });
 describe("automation screens", () => {
+  it("keeps a dirty builder mounted when retrying history", async () => {
+    let historyCalls = 0;
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(async (url) => {
+        if (String(url).includes("/executions?"))
+          return ++historyCalls === 1
+            ? response({}, 503)
+            : response({ items: [] });
+        return response(d);
+      });
+    render(<Automations route={`#automations/${id}`} />);
+    await screen.findByRole("button", { name: "+ Condition (placeholder)" });
+    fireEvent.click(
+      screen.getByRole("button", { name: "+ Condition (placeholder)" }),
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Retry" }));
+    await screen.findByText("No executions yet.");
+    expect(screen.getByText("Unsaved changes")).toBeInTheDocument();
+    expect(
+      screen.getByText("Condition is a placeholder and blocks activation."),
+    ).toBeInTheDocument();
+    expect(
+      fetchMock.mock.calls.filter(
+        ([url]) => !String(url).includes("/executions?"),
+      ).length,
+    ).toBe(1);
+  });
+  it("treats an old server definition as a read-only preview", async () => {
+    const legacy: Partial<typeof d> = { ...d };
+    delete legacy.graph;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url) =>
+      String(url).includes("/executions?")
+        ? response({ items: [] })
+        : response(legacy),
+    );
+    render(<Automations route={`#automations/${id}`} />);
+    expect(
+      await screen.findByText(/server does not support graph persistence/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Save workflow" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "+ Condition (placeholder)" }),
+    ).toBeDisabled();
+    expect(screen.getByRole("button", { name: /Activate/ })).toBeDisabled();
+  });
   it("loads scoped empty list and exposes accessible scope", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response({ items: [] })));
     render(<Automations route="#automations" />);

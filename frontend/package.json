@@ -13,6 +13,8 @@
     "format:write": "prettier --write \"**/*\" \"!dist/**\" \"!coverage/**\" \"!node_modules/**\""
   },
   "dependencies": {
+    "@fontsource/inter": "^5.2.8",
+    "@xyflow/react": "12.12.1",
     "react": "19.2.0",
     "react-dom": "19.2.0"
   },
