@@ -60,6 +60,7 @@ export default function Automations({ route }: { route: string }) {
   }, []);
   const scopeInput = useRef<HTMLInputElement>(null);
   const nameInput = useRef<HTMLInputElement>(null);
+  const historyHeading = useRef<HTMLHeadingElement>(null);
   const id = route.startsWith("#automations/")
     ? route.slice("#automations/".length)
     : "";
@@ -466,7 +467,9 @@ export default function Automations({ route }: { route: string }) {
                 }}
               />
               <section className="panel" aria-live="polite">
-                <h2>Execution history</h2>
+                <h2 ref={historyHeading} tabIndex={-1}>
+                  Execution history
+                </h2>
                 {history.kind === "loading" ? (
                   <p>Loading history…</p>
                 ) : history.kind === "error" ? (
@@ -475,6 +478,7 @@ export default function Automations({ route }: { route: string }) {
                     <button
                       disabled={pending}
                       onClick={() => {
+                        historyHeading.current?.focus();
                         setHistory({ kind: "loading" });
                         setHistoryRefresh((x) => x + 1);
                       }}
@@ -513,7 +517,57 @@ export default function Automations({ route }: { route: string }) {
                               <td data-label="Revision">{x.revision}</td>
                               <td data-label="Created · UTC">{x.createdAt}</td>
                               <td data-label="Result">
-                                {x.result ? (
+                                {x.result?.kind === "condition-execution.v1" ? (
+                                  <div
+                                    className={`execution-result execution-result--${x.result.action.status}`}
+                                  >
+                                    <strong>
+                                      {x.result.decision
+                                        ? `Decision ${x.result.decision.outcome} → ${x.result.decision.targetNodeId}`
+                                        : "Decision unavailable"}
+                                    </strong>
+                                    <div>
+                                      Action:{" "}
+                                      {x.result.action.status.replaceAll(
+                                        "_",
+                                        " ",
+                                      )}
+                                      {x.result.action.nodeId
+                                        ? ` · ${x.result.action.nodeId}`
+                                        : ""}
+                                    </div>
+                                    {x.result.failure && (
+                                      <div>
+                                        Failure:{" "}
+                                        {x.result.failure.classification} ·{" "}
+                                        {x.result.failure.code}
+                                      </div>
+                                    )}
+                                    {(x.status === "retry_scheduled" ||
+                                      x.status === "retry_released") && (
+                                      <div>
+                                        Retry (event-level):{" "}
+                                        {x.status.replaceAll("_", " ")}
+                                      </div>
+                                    )}
+                                    <details>
+                                      <summary>Execution details</summary>
+                                      <p>Pinned revision: {x.revision}</p>
+                                      {x.result.decision && (
+                                        <p>
+                                          Condition node:{" "}
+                                          {x.result.decision.nodeId}
+                                        </p>
+                                      )}
+                                      {x.result.failure?.nodeId && (
+                                        <p>
+                                          Failure node:{" "}
+                                          {x.result.failure.nodeId}
+                                        </p>
+                                      )}
+                                    </details>
+                                  </div>
+                                ) : x.result ? (
                                   <pre>{JSON.stringify(x.result, null, 2)}</pre>
                                 ) : (
                                   "Not available"
