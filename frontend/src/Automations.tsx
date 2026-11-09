@@ -9,6 +9,7 @@ import {
 import { ApiError, validId } from "./api";
 import {
   ConflictError,
+  ValidationError,
   createDefinition,
   getDefinition,
   listDefinitions,
@@ -215,12 +216,14 @@ export default function Automations({ route }: { route: string }) {
       if (!controller.signal.aborted) {
         if (err instanceof ConflictError) {
           setMutationError(
-            "This revision is stale. Reload the latest definition before trying again.",
+            "Revision conflict: this revision is stale. Reload the latest definition before trying again.",
           );
-          setDetail({
-            kind: "error",
-            message: "Revision conflict: the definition changed.",
-          });
+        } else if (err instanceof ValidationError) {
+          setMutationError(
+            err.issues.some((issue) => issue.code === "conditions_disabled")
+              ? "Condition writes are disabled (CONDITIONS_WRITES_ENABLED). The update was rejected."
+              : "The service rejected this update. Reload before trying again.",
+          );
         } else
           setMutationError(
             `${message(err)} The update may have succeeded; reload before retrying.`,
@@ -428,11 +431,7 @@ export default function Automations({ route }: { route: string }) {
                   Action: record-receipt.v1
                 </p>
                 <button
-                  disabled={
-                    pending ||
-                    !!mutationError ||
-                    (!detail.data.active && builderBlocked)
-                  }
+                  disabled={pending || !!mutationError || builderBlocked}
                   onClick={() => toggle(detail.data)}
                 >
                   {pending
@@ -445,6 +444,7 @@ export default function Automations({ route }: { route: string }) {
                   <>
                     <p role="alert">{mutationError}</p>
                     <button
+                      disabled={builderBlocked}
                       onClick={() => {
                         setMutationError("");
                         reload();
@@ -459,7 +459,7 @@ export default function Automations({ route }: { route: string }) {
                 key={`${detail.data.id}-${detail.data.revision}`}
                 definition={detail.data}
                 onDirty={reportBuilderState}
-                busy={pending}
+                busy={pending || !!mutationError}
                 onSaved={(updated) => {
                   detailReadVersion.current++;
                   setDetail({ kind: "ready", data: updated });
