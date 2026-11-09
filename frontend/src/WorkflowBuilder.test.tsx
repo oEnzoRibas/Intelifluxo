@@ -7,8 +7,9 @@ import {
 } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import WorkflowBuilder, { flowEdges, flowNodes } from "./WorkflowBuilder";
-import { defaultGraph } from "./workflow-graph";
-import type { Definition } from "./automation-api";
+import { conditionDraft, defaultGraph } from "./workflow-graph";
+import { definition, type Definition } from "./automation-api";
+import { edgeIdentity } from "./condition-contract";
 
 const d: Definition = {
   id: "11111111-1111-1111-1111-111111111111",
@@ -23,6 +24,65 @@ const d: Definition = {
   graph: defaultGraph(),
   graphSource: "server",
 };
+it("hydrates a persisted condition graph into the builder without changing its topology", () => {
+  const graph = conditionDraft(defaultGraph(), false, {
+    fieldPath: "data.value",
+    operator: "exists",
+  });
+  const { graphSource: _graphSource, ...raw } = d;
+  expect(_graphSource).toBe("server");
+  const loaded = definition({
+    ...raw,
+    schemaVersion: 2,
+    graph,
+  });
+  const onDirty = vi.fn();
+  const { container } = render(
+    <WorkflowBuilder definition={loaded} onDirty={onDirty} onSaved={vi.fn()} />,
+  );
+  expect(screen.getByRole("button", { name: "Condition" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "End" })).toBeInTheDocument();
+  expect(
+    screen.queryByText(/workflow preview is read-only/i),
+  ).not.toBeInTheDocument();
+  expect(onDirty).toHaveBeenLastCalledWith(false);
+  expect(
+    container.querySelector('[data-nodeid="condition"][data-handleid="TRUE"]'),
+  ).toHaveAttribute("aria-label", "TRUE output");
+  expect(
+    container.querySelector('[data-nodeid="condition"][data-handleid="FALSE"]'),
+  ).toHaveAttribute("aria-label", "FALSE output");
+  expect(
+    within(screen.getByLabelText("Workflow connections")).getByText(
+      /Condition — TRUE → Record Receipt Action/,
+    ),
+  ).toBeInTheDocument();
+  expect(
+    within(screen.getByLabelText("Workflow connections")).getByText(
+      /Condition — FALSE → End/,
+    ),
+  ).toBeInTheDocument();
+  expect(flowEdges(graph).map((edge) => edge.id)).toEqual(
+    graph.edges.map(edgeIdentity),
+  );
+  expect(flowEdges(graph)[1]).toMatchObject({
+    sourceHandle: "TRUE",
+    label: "TRUE",
+    target: "action",
+  });
+  expect(flowEdges(graph)[2]).toMatchObject({
+    sourceHandle: "FALSE",
+    label: "FALSE",
+    target: "end",
+  });
+  expect(
+    flowNodes(graph).map(({ id, position }) => ({ id, position })),
+  ).toEqual(graph.nodes.map(({ id, position }) => ({ id, position })));
+  expect(
+    screen.getByRole("button", { name: "Reset to executable path" }),
+  ).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Save workflow" })).toBeDisabled();
+});
 it("restores focus after inspector dismissal and falls back after removal", () => {
   render(
     <WorkflowBuilder definition={d} onDirty={vi.fn()} onSaved={vi.fn()} />,
