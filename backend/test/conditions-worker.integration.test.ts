@@ -33,6 +33,181 @@ describe.skipIf(process.env.INTEGRATION !== "1")(
         await admin.end();
       }
     });
+    it("processes pre-graph v1 revisions alone and with both v2 branches", async () => {
+      const app = api(pool, true, true);
+      const broker = await connectBroker();
+      const confirm = await broker.createConfirmChannel();
+      const queue = `legacy-condition-worker.${randomUUID()}`;
+      const legacyId = randomUUID();
+      const scope = `legacy-${randomUUID()}`;
+      try {
+        // Insert as an old writer would: omit the later-added graph column.
+        const client = await pool.connect();
+        try {
+          await client.query("BEGIN");
+          await client.query(
+            "INSERT INTO automation_definitions(id,scope,current_revision) VALUES ($1,$2,1)",
+            [legacyId, scope],
+          );
+          await client.query(
+            `INSERT INTO automation_definition_revisions
+             (automation_id,revision,name,active,schema_version,trigger_type,action_type)
+             VALUES ($1,1,'legacy',true,1,'receipt.v1','record-receipt.v1')`,
+            [legacyId],
+          );
+          await client.query("COMMIT");
+        } catch (error) {
+          await client.query("ROLLBACK");
+          throw error;
+        } finally {
+          client.release();
+        }
+        expect(
+          (
+            await pool.query(
+              "SELECT graph IS NULL AS absent FROM automation_definition_revisions WHERE automation_id=$1",
+              [legacyId],
+            )
+          ).rows[0].absent,
+        ).toBe(true);
+        await confirm.assertQueue(queue, { durable: true });
+        const process = async (key: string) => {
+          const accepted = await app.inject({
+            method: "POST",
+            url: "/events",
+            payload: {
+              scope,
+              idempotencyKey: key,
+              type: "receipt.v1",
+              target: "local-receipt",
+              message: "hello",
+              data: { value: 42 },
+            },
+          });
+          expect(accepted.statusCode).toBe(202);
+          const eventId = accepted.json().id;
+          expect(await relayOnce(pool, confirm, queue, [], eventId)).toBe(1);
+          const channel = await broker.createChannel();
+          try {
+            const message = await channel.get(queue, { noAck: false });
+            if (!message) throw new Error("missing delivery");
+            await handleMessage(pool, channel, message);
+          } finally {
+            await channel.close();
+          }
+          expect(
+            (
+              await pool.query(
+                "SELECT result FROM receipts WHERE event_id=$1",
+                [eventId],
+              )
+            ).rows,
+          ).toMatchObject([
+            { result: { kind: "local-receipt.v1", eventId, message: "hello" } },
+          ]);
+          const items = (
+            await app.inject({
+              method: "GET",
+              url: `/executions?eventId=${eventId}`,
+            })
+          ).json().items;
+          expect(
+            items.find(
+              (x: { automationId: string }) => x.automationId === legacyId,
+            ),
+          ).toMatchObject({
+            revision: 1,
+            schemaVersion: 1,
+            status: "completed",
+            result: { kind: "local-receipt.v1" },
+          });
+          return items;
+        };
+        expect(await process("legacy-only")).toHaveLength(1);
+        const ids: string[] = [];
+        for (const expectedValue of [42, 7]) {
+          const graph = {
+            version: 2,
+            nodes: [
+              {
+                id: "t",
+                kind: "trigger",
+                type: "receipt.v1",
+                position: { x: 0, y: 0 },
+              },
+              {
+                id: "c",
+                kind: "condition",
+                type: "condition.v1",
+                position: { x: 1, y: 0 },
+                config: {
+                  fieldPath: "data.value",
+                  operator: "equals",
+                  expectedType: "number",
+                  expectedValue,
+                },
+              },
+              {
+                id: "a",
+                kind: "action",
+                type: "record-receipt.v1",
+                position: { x: 2, y: 0 },
+              },
+              {
+                id: "e",
+                kind: "end",
+                type: "end.v1",
+                position: { x: 3, y: 0 },
+              },
+            ],
+            edges: [
+              { source: "t", target: "c" },
+              { source: "c", sourcePort: "TRUE", target: "a" },
+              { source: "c", sourcePort: "FALSE", target: "e" },
+              { source: "a", target: "e" },
+            ],
+          };
+          const config = {
+            name: `condition-${expectedValue}`,
+            schemaVersion: 2,
+            trigger: { type: "receipt.v1" },
+            action: { type: "record-receipt.v1" },
+            graph,
+          };
+          const created = await app.inject({
+            method: "POST",
+            url: "/automations",
+            payload: { ...config, scope },
+          });
+          expect(created.statusCode).toBe(201);
+          const id = created.json().id;
+          ids.push(id);
+          expect(
+            (
+              await app.inject({
+                method: "PUT",
+                url: `/automations/${id}`,
+                payload: { ...config, active: true, expectedRevision: 1 },
+              })
+            ).statusCode,
+          ).toBe(200);
+        }
+        const items = await process("mixed");
+        expect(items).toHaveLength(3);
+        for (const [id, outcome, status] of [
+          [ids[0], "TRUE", "completed"],
+          [ids[1], "FALSE", "ignored"],
+        ])
+          expect(
+            items.find((x: { automationId: string }) => x.automationId === id),
+          ).toMatchObject({ status, result: { decision: { outcome } } });
+      } finally {
+        await confirm.deleteQueue(queue);
+        await confirm.close();
+        await broker.close();
+        await app.close();
+      }
+    });
     it("persists TRUE and FALSE with baseline receipts through relay and redelivery", async () => {
       const app = api(pool, true, true);
       const broker = await connectBroker();

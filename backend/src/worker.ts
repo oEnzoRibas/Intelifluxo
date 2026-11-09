@@ -5,7 +5,12 @@ import { queue } from "./config.js";
 import { decideRetry, type Outcome, type RetryPolicy } from "./retry-policy.js";
 import { evaluateCondition } from "./condition.js";
 import { validateGraphV2 } from "./graph-v2.js";
-import { graphShape, graphSemantics, type Graph } from "./graph.js";
+import {
+  defaultGraph,
+  graphShape,
+  graphSemantics,
+  type Graph,
+} from "./graph.js";
 
 // Internal test seam only. Neither the HTTP request nor the dispatch selects outcomes.
 export type WorkerOptions = {
@@ -91,7 +96,7 @@ export async function processMessage(
     )
       return;
     const executions = await client.query(
-      `SELECT x.id,x.schema_version,x.trigger_type,x.action_type,r.graph,r.schema_version AS revision_version,r.trigger_type AS revision_trigger,r.action_type AS revision_action
+      `SELECT x.id,x.schema_version,x.trigger_type,x.action_type,r.graph,r.graph IS NULL AS graph_is_sql_null,r.schema_version AS revision_version,r.trigger_type AS revision_trigger,r.action_type AS revision_action
        FROM automation_executions x LEFT JOIN automation_definition_revisions r
        ON r.automation_id=x.automation_id AND r.revision=x.revision WHERE x.event_id=$1 ORDER BY x.id`,
       [dispatch.eventId],
@@ -134,10 +139,11 @@ export async function processMessage(
       )
         return bad();
       if (row.schema_version === 1) {
+        const graph = row.graph_is_sql_null ? defaultGraph() : row.graph;
         if (
-          graphShape(row.graph).length ||
+          graphShape(graph).length ||
           graphSemantics(
-            row.graph as Graph,
+            graph as Graph,
             true,
             row.trigger_type,
             row.action_type,
