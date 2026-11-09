@@ -740,3 +740,133 @@ it("opens and dismisses the tablet library and restores focus", () => {
   expect(open).toHaveFocus();
   media.mockRestore();
 });
+
+it("converts, edits typed condition values, saves and reopens", async () => {
+  Object.defineProperty(window, "matchMedia", {
+    configurable: true,
+    value: undefined,
+  });
+  const onSaved = vi.fn();
+  const fetchMock = vi
+    .spyOn(globalThis, "fetch")
+    .mockImplementation(async (_url, init) => {
+      const body = JSON.parse(String(init?.body));
+      return new Response(
+        JSON.stringify({
+          ...d,
+          graphSource: undefined,
+          schemaVersion: 2,
+          graph: body.graph,
+          revision: 2,
+        }),
+      );
+    });
+  const view = render(
+    <WorkflowBuilder definition={d} onDirty={vi.fn()} onSaved={onSaved} />,
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: "Convert to condition workflow" }),
+  );
+  expect(screen.getByLabelText("Field path")).toHaveValue("payload");
+  fireEvent.change(screen.getByLabelText("Field path"), {
+    target: { value: "" },
+  });
+  expect(screen.getByRole("button", { name: "Condition" })).toHaveAttribute(
+    "aria-invalid",
+    "true",
+  );
+  expect(screen.getByRole("button", { name: "Save workflow" })).toBeDisabled();
+  fireEvent.change(screen.getByLabelText("Field path"), {
+    target: { value: "data.total" },
+  });
+  for (const operator of [
+    "equals",
+    "not_equals",
+    "greater_than",
+    "less_than",
+    "contains",
+    "exists",
+  ]) {
+    fireEvent.change(screen.getByLabelText("Operator"), {
+      target: { value: operator },
+    });
+    expect(screen.getByLabelText("Operator")).toHaveValue(operator);
+  }
+  fireEvent.change(screen.getByLabelText("Operator"), {
+    target: { value: "equals" },
+  });
+  for (const type of ["boolean", "null", "string", "number"]) {
+    fireEvent.change(screen.getByLabelText("Expected type"), {
+      target: { value: type },
+    });
+    expect(screen.getByLabelText("Expected type")).toHaveValue(type);
+  }
+  fireEvent.change(screen.getByLabelText("Expected value"), {
+    target: { value: "" },
+  });
+  expect(screen.getByRole("button", { name: "Save workflow" })).toBeDisabled();
+  fireEvent.change(screen.getByLabelText("Expected value"), {
+    target: { value: "42.5" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Save workflow" }));
+  await waitFor(() => expect(onSaved).toHaveBeenCalled());
+  const body = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
+  expect(body.expectedRevision).toBe(1);
+  expect(
+    body.graph.nodes.find((node: { kind: string }) => node.kind === "condition")
+      .config,
+  ).toEqual({
+    fieldPath: "data.total",
+    operator: "equals",
+    expectedType: "number",
+    expectedValue: 42.5,
+  });
+  view.unmount();
+  render(
+    <WorkflowBuilder
+      definition={onSaved.mock.calls[0][0]}
+      onDirty={vi.fn()}
+      onSaved={vi.fn()}
+    />,
+  );
+  const button = screen.getByRole("button", { name: "Condition" });
+  fireEvent.click(button);
+  expect(screen.getByLabelText("Expected value")).toHaveValue("42.5");
+  fireEvent.change(screen.getByLabelText("Operator"), {
+    target: { value: "exists" },
+  });
+  expect(screen.queryByLabelText("Expected value")).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Close" }));
+  expect(button).toHaveFocus();
+  fetchMock.mockRestore();
+});
+
+it("retains placeholder identity and positions while avoiding end ID collisions", () => {
+  const graph = defaultGraph();
+  graph.nodes[0].id = "end";
+  graph.nodes[1].id = "condition";
+  graph.nodes.push({
+    id: "custom-condition",
+    kind: "condition",
+    type: "condition-placeholder.v1",
+    position: { x: 12, y: 34 },
+  });
+  graph.edges = [
+    { source: "end", target: "custom-condition" },
+    { source: "custom-condition", target: "condition" },
+  ];
+  const converted = conditionDraft(graph, false, {
+    fieldPath: "data",
+    operator: "exists",
+  });
+  expect(converted.nodes.map((node) => node.id)).toEqual([
+    "end",
+    "custom-condition",
+    "condition",
+    "end-1",
+  ]);
+  expect(converted.nodes[1].position).toEqual({ x: 12, y: 34 });
+  expect(
+    conditionDraft(graph, false, { fieldPath: "data", operator: "exists" }),
+  ).toEqual(converted);
+});
