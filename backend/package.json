@@ -19,7 +19,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint src test scripts",
     "format": "prettier --check .",
-    "format:write": "prettier --write ."
+    "format:write": "prettier --write .",
+    "demo:automation": "tsx scripts/automation-demo.ts"
   },
   "dependencies": {
     "amqplib": "2.3.0",

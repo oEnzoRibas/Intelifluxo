@@ -44,6 +44,25 @@ Acceptance inserts event/idempotency binding, fixed target snapshot (`local-rece
 
 ## Tests and observability
 
+The `npm run demo:automation` command requires `DEMO_LOCAL=1`, loopback
+`DATABASE_URL` and `AMQP_URL`, and `AUTOMATION_SNAPSHOTS_ENABLED=true`. Use
+only dedicated disposable services; it creates and cleans up a unique schema and
+broker-generated queue. Interrupted runs may leave resources requiring inspection.
+
+For the process recovery test, use dedicated disposable loopback PostgreSQL and
+RabbitMQ services, set `DEMO_LOCAL=1`, `DATABASE_URL`, `AMQP_URL`,
+`AUTOMATION_SNAPSHOTS_ENABLED=true` and `RECOVERY_INTEGRATION=true`, then run
+`npx vitest run test/recovery.integration.test.ts`. Loopback alone does not
+establish disposability: the operator must verify that neither service is shared
+or production. The test creates a random schema and queue, uses test-only child
+processes invoking the same relay and worker handlers with that queue, and removes
+only its own resources. An interrupted run can leave resources behind; inspect
+ownership before cleanup. It kills the worker at the post-commit/pre-ack hook and
+the relay after retry publication but before database confirmation. Ready,
+commit, redelivery and acknowledgement barriers are explicit. The production CLI
+is not exercised because it uses a fixed queue. The retry failure is injected via
+the existing internal handler seam.
+
 `npm run format`, `npm run typecheck`, `npm test` run local checks. To include real services, set both URLs and `$env:INTEGRATION='1'`, then run `npm test` or `npm run test:integration`. The integration suite requires disposable dedicated database and broker services, permission to create and drop a schema, and no other processes using its randomly named resources. Each run creates an isolated schema and uniquely named application queue, and cleans up only those owned resources. An interrupted run can leave its test schema or queue behind; inspect ownership before manual cleanup. Never point it at shared or production infrastructure. Without opt-in, real-service tests are skipped. Tests include explicit return/confirm traces and a commit/ack barrier with actual broker redelivery; they do not implement all QA acceptance case variants or map any 176-fixture IDs. The offline check uses an unreachable endpoint and checks pending rows, not broker stop/restart or recovery.
 
 Logging is intentionally minimal: scheduler and relay emit structured sweep counts, worker reports consumption/error, and connection errors are sanitized. No metrics, tracing, dashboards, alerting, retention, operational repair or security monitoring are provided. The migration runner applies 001 through 005 using idempotent bootstrap SQL; it is not a production migration framework. Image tags are pinned but not digest-locked. No independent critical-change review has been performed by this subagent.
@@ -117,3 +136,10 @@ query properties and multiple filters return 400. See
 retry metadata derive from the existing event disposition; the result is null
 until completed. Historical revision and action data remain pinned when the
 definition changes. Legacy events have no executions.
+
+The automation demo and recovery test use UUID-based `intelifluxo.automation.*`
+queues, not RabbitMQ-reserved `amq.gen-*` declarations. AMQP operations and
+cleanup steps have deadlines; timed-out broker operations destroy the underlying
+connection where available. Cleanup reports failures and continues to the schema
+step. A timeout or interruption can still leave a queue or schema; inspect and
+remove only resources belonging to that run on the disposable services.
