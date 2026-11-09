@@ -4,8 +4,30 @@ import { required, queue } from "./config.js";
 
 export async function connectBroker(): Promise<ChannelModel> {
   const connection = await amqp.connect(required("AMQP_URL"));
-  connection.on("error", () => console.error("broker connection error"));
+  connection.on("error", (error) => logBrokerError("connection", error));
   return connection;
+}
+
+// Error messages and custom fields can contain connection URLs or credentials.
+// Only emit a fixed, allowlisted type, never arbitrary error-provided text.
+export function brokerErrorType(error: unknown): string {
+  if (!(error instanceof Error)) return "unknown error";
+  switch (error.name) {
+    case "TypeError":
+    case "RangeError":
+    case "SyntaxError":
+    case "Error":
+      return error.name;
+    default:
+      return "other error";
+  }
+}
+
+export function logBrokerError(
+  source: "connection" | "channel",
+  error: unknown,
+): void {
+  console.error(`broker ${source} error:`, brokerErrorType(error));
 }
 
 // One in-flight publication per channel: return and confirm are correlated without
