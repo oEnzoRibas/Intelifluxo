@@ -65,11 +65,23 @@ describe.skipIf(process.env.INTEGRATION !== "1")(
         expect(
           (
             await pool.query(
-              "SELECT graph IS NULL AS absent FROM automation_definition_revisions WHERE automation_id=$1",
+              "SELECT graph IS NULL AS absent, jsonb_typeof(graph) AS graph_type FROM automation_definition_revisions WHERE automation_id=$1",
               [legacyId],
             )
-          ).rows[0].absent,
-        ).toBe(true);
+          ).rows[0],
+        ).toEqual({ absent: true, graph_type: null });
+        const canonical = JSON.parse(
+          await readFile(
+            new URL("./fixtures/graph-v1-default.json", import.meta.url),
+            "utf8",
+          ),
+        );
+        const definition = await app.inject({
+          method: "GET",
+          url: `/automations/${legacyId}`,
+        });
+        expect(definition.statusCode).toBe(200);
+        expect(definition.json().graph).toEqual(canonical);
         await confirm.assertQueue(queue, { durable: true });
         const process = async (key: string) => {
           const accepted = await app.inject({
@@ -124,6 +136,14 @@ describe.skipIf(process.env.INTEGRATION !== "1")(
           return items;
         };
         expect(await process("legacy-only")).toHaveLength(1);
+        expect(
+          (
+            await pool.query(
+              "SELECT graph IS NULL AS absent FROM automation_definition_revisions WHERE automation_id=$1",
+              [legacyId],
+            )
+          ).rows[0].absent,
+        ).toBe(true);
         const ids: string[] = [];
         for (const expectedValue of [42, 7]) {
           const graph = {
@@ -201,6 +221,145 @@ describe.skipIf(process.env.INTEGRATION !== "1")(
           expect(
             items.find((x: { automationId: string }) => x.automationId === id),
           ).toMatchObject({ status, result: { decision: { outcome } } });
+      } finally {
+        await confirm.deleteQueue(queue);
+        await confirm.close();
+        await broker.close();
+        await app.close();
+      }
+    });
+    it("fails closed for invalid persisted null graphs rather than materializing v1", async () => {
+      const app = api(pool, true, true);
+      const broker = await connectBroker();
+      const confirm = await broker.createConfirmChannel();
+      const queue = `invalid-null-worker.${randomUUID()}`;
+      try {
+        await confirm.assertQueue(queue, { durable: true });
+        for (const [version, graphSql, absent, graphType] of [
+          [1, "'null'::jsonb", false, "null"],
+          [2, "NULL", true, null],
+        ] as const) {
+          const id = randomUUID();
+          const scope = `invalid-null-${randomUUID()}`;
+          const insertRevision = `INSERT INTO automation_definition_revisions
+            (automation_id,revision,name,active,schema_version,trigger_type,action_type,graph)
+            VALUES ($1,1,'invalid',true,$2,'receipt.v1','record-receipt.v1',${graphSql})`;
+          const client = await pool.connect();
+          try {
+            await client.query("BEGIN");
+            await client.query(
+              "INSERT INTO automation_definitions(id,scope,current_revision) VALUES ($1,$2,1)",
+              [id, scope],
+            );
+            await expect(
+              client.query(insertRevision, [id, version]),
+            ).rejects.toMatchObject({
+              code: "23514",
+              constraint: "automation_graph_valid_v2",
+            });
+            await client.query("ROLLBACK");
+
+            // Model a corrupt historical snapshot in this disposable schema only.
+            // Restore the guard immediately: it still rejects all new invalid rows.
+            await client.query("BEGIN");
+            await client.query(
+              "ALTER TABLE automation_definition_revisions DROP CONSTRAINT automation_graph_valid_v2",
+            );
+            await client.query(
+              "INSERT INTO automation_definitions(id,scope,current_revision) VALUES ($1,$2,1)",
+              [id, scope],
+            );
+            await client.query(insertRevision, [id, version]);
+            await client.query(
+              "ALTER TABLE automation_definition_revisions ADD CONSTRAINT automation_graph_valid_v2 CHECK (automation_graph_guard_v2(graph, active, schema_version, trigger_type, action_type) IS TRUE) NOT VALID",
+            );
+            await client.query("COMMIT");
+          } catch (error) {
+            await client.query("ROLLBACK");
+            throw error;
+          } finally {
+            client.release();
+          }
+          expect(
+            (
+              await pool.query(
+                "SELECT graph IS NULL AS absent, jsonb_typeof(graph) AS graph_type FROM automation_definition_revisions WHERE automation_id=$1",
+                [id],
+              )
+            ).rows[0],
+          ).toEqual({ absent, graph_type: graphType });
+          const accepted = await app.inject({
+            method: "POST",
+            url: "/events",
+            payload: {
+              scope,
+              idempotencyKey: "invalid",
+              type: "receipt.v1",
+              target: "local-receipt",
+              message: "test",
+            },
+          });
+          expect(accepted.statusCode).toBe(202);
+          const eventId = accepted.json().id;
+          expect(await relayOnce(pool, confirm, queue, [], eventId)).toBe(1);
+          const channel = await broker.createChannel();
+          try {
+            const message = await channel.get(queue, { noAck: false });
+            if (!message) throw new Error("missing delivery");
+            await handleMessage(pool, channel, message);
+          } finally {
+            await channel.close();
+          }
+          expect(
+            (
+              await pool.query("SELECT 1 FROM receipts WHERE event_id=$1", [
+                eventId,
+              ])
+            ).rowCount,
+          ).toBe(0);
+          expect(
+            (
+              await pool.query(
+                "SELECT outcome,state,reason FROM retry_dispositions WHERE event_id=$1",
+                [eventId],
+              )
+            ).rows,
+          ).toEqual([
+            { outcome: "unknown", state: "blocked", reason: "unknown" },
+          ]);
+          const items = (
+            await app.inject({
+              method: "GET",
+              url: `/executions?eventId=${eventId}`,
+            })
+          ).json().items;
+          expect(items).toHaveLength(1);
+          expect(items[0]).toMatchObject({
+            automationId: id,
+            schemaVersion: version,
+            status: "blocked",
+            ...(version === 2
+              ? {
+                  result: {
+                    decision: null,
+                    action: { status: "not_executed" },
+                    failure: {
+                      classification: "unknown",
+                      code: "unsupported_execution_contract",
+                    },
+                  },
+                }
+              : { result: null }),
+          });
+          expect(
+            (
+              await pool.query(
+                "SELECT graph IS NULL AS absent, jsonb_typeof(graph) AS graph_type FROM automation_definition_revisions WHERE automation_id=$1",
+                [id],
+              )
+            ).rows[0],
+          ).toEqual({ absent, graph_type: graphType });
+        }
       } finally {
         await confirm.deleteQueue(queue);
         await confirm.close();
