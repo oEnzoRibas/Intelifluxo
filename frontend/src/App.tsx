@@ -1,3 +1,4 @@
+import Automations from "./Automations";
 import {
   useEffect,
   useRef,
@@ -25,17 +26,31 @@ function Panel({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 function App() {
-  const [view, setView] = useState<"overview" | "explorer">(() =>
-    window.location.hash === "#explorer" ? "explorer" : "overview",
+  const [route, setRoute] = useState(window.location.hash);
+  const [view, setView] = useState<"overview" | "explorer" | "automations">(
+    () =>
+      window.location.hash.startsWith("#automations")
+        ? "automations"
+        : window.location.hash.startsWith("#explorer")
+          ? "explorer"
+          : "overview",
   );
   const viewRef = useRef(view);
   const request = useRef<AbortController | null>(null);
   const submittedId = useRef<string | null>(null);
   const [event, setEvent] = useState<Load<EventDetail>>({ kind: "idle" });
+  const [id, setId] = useState(() => {
+    const value =
+      new URLSearchParams(window.location.hash.split("?")[1] ?? "").get(
+        "eventId",
+      ) ?? "";
+    return validId(value) ? value : "";
+  });
   useEffect(() => {
     function syncView() {
-      const next =
-        window.location.hash === "#explorer"
+      const next = window.location.hash.startsWith("#automations")
+        ? "automations"
+        : window.location.hash.startsWith("#explorer")
           ? "explorer"
           : window.location.hash === "#overview" || window.location.hash === ""
             ? "overview"
@@ -52,6 +67,18 @@ function App() {
       }
       viewRef.current = next;
       setView(next);
+      setRoute(window.location.hash);
+      if (next === "explorer") {
+        const eventId = new URLSearchParams(
+          window.location.hash.split("?")[1] ?? "",
+        ).get("eventId");
+        if (eventId && validId(eventId)) {
+          request.current?.abort();
+          setEvent({ kind: "idle" });
+          submittedId.current = null;
+          setId(eventId);
+        }
+      }
     }
     window.addEventListener("hashchange", syncView);
     return () => window.removeEventListener("hashchange", syncView);
@@ -59,7 +86,6 @@ function App() {
   const [profile, setProfile] = useState<Load<Profile>>({ kind: "loading" });
   const [refresh, setRefresh] = useState(0);
   const [showRetry, setShowRetry] = useState(false);
-  const [id, setId] = useState("");
   const [error, setError] = useState("");
   useEffect(() => {
     const controller = new AbortController();
@@ -114,7 +140,8 @@ function App() {
   const lookupPanel = (
     <Panel title="Event lookup">
       <p className="muted">
-        Find an event using its ID. Results are a point-in-time snapshot.
+        Find an event using its ID. Select Look up event to retrieve a
+        point-in-time snapshot, including when an ID is prefilled.
       </p>
       <form onSubmit={lookup} noValidate>
         <label htmlFor="event-id">Event ID</label>
@@ -265,11 +292,17 @@ function App() {
             >
               Event Explorer
             </a>
+            <a
+              href="#automations"
+              aria-current={view === "automations" ? "page" : undefined}
+            >
+              Automations
+            </a>
           </nav>
           <p className="side-note">
             Local development
             <br />
-            <span>Read-only workspace</span>
+            <span>Operator workspace</span>
           </p>
         </aside>
         <div className="workspace">
@@ -277,13 +310,19 @@ function App() {
             <span>
               Operations /{" "}
               <strong>
-                {view === "overview" ? "Overview" : "Event Explorer"}
+                {view === "overview"
+                  ? "Overview"
+                  : view === "explorer"
+                    ? "Event Explorer"
+                    : "Automations"}
               </strong>
             </span>
             <span className="environment">Local profile</span>
           </header>
           <main id="main" tabIndex={-1}>
-            {view === "overview" ? (
+            {view === "automations" ? (
+              <Automations route={route} />
+            ) : view === "overview" ? (
               <>
                 <div className="heading">
                   <div>
