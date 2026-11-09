@@ -367,3 +367,31 @@ pre {
     color: #64748b;
   }
 }
+.builder-layout {
+  display: grid;
+  grid-template-columns: minmax(180px, 220px) minmax(300px, 1fr) minmax(
+      180px,
+      260px
+    );
+  gap: 1rem;
+}
+.builder-palette,
+.builder-info {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.5rem;
+}
+.builder-canvas {
+  height: 500px;
+  border: 1px solid #cbd5e1;
+  background: #f8fafc;
+}
+@media (max-width: 900px) {
+  .builder-layout {
+    grid-template-columns: 1fr;
+  }
+  .builder-canvas {
+    height: 420px;
+  }
+}

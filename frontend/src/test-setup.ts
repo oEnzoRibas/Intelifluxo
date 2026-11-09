@@ -4,3 +4,9 @@ import { afterEach } from "vitest";
 afterEach(() => {
   cleanup();
 });
+class ResizeObserverShim {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+globalThis.ResizeObserver = ResizeObserverShim;
