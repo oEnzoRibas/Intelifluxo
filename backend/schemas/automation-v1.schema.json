@@ -41,6 +41,107 @@
               "const": "record-receipt.v1"
             }
           }
+        },
+        "graph": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["version", "nodes", "edges"],
+          "properties": {
+            "version": {
+              "const": 1
+            },
+            "nodes": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 3,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["id", "kind", "type", "position"],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+                  },
+                  "kind": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "type": "string"
+                  },
+                  "position": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["x", "y"],
+                    "properties": {
+                      "x": {
+                        "type": "number",
+                        "minimum": -10000,
+                        "maximum": 10000
+                      },
+                      "y": {
+                        "type": "number",
+                        "minimum": -10000,
+                        "maximum": 10000
+                      }
+                    }
+                  }
+                },
+                "oneOf": [
+                  {
+                    "properties": {
+                      "kind": {
+                        "const": "trigger"
+                      },
+                      "type": {
+                        "const": "receipt.v1"
+                      }
+                    }
+                  },
+                  {
+                    "properties": {
+                      "kind": {
+                        "const": "action"
+                      },
+                      "type": {
+                        "const": "record-receipt.v1"
+                      }
+                    }
+                  },
+                  {
+                    "properties": {
+                      "kind": {
+                        "const": "condition"
+                      },
+                      "type": {
+                        "const": "condition-placeholder.v1"
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            "edges": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 2,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["source", "target"],
+                "properties": {
+                  "source": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+                  },
+                  "target": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+                  }
+                }
+              }
+            }
+          }
         }
       }
     },
@@ -92,6 +193,107 @@
               "const": "record-receipt.v1"
             }
           }
+        },
+        "graph": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["version", "nodes", "edges"],
+          "properties": {
+            "version": {
+              "const": 1
+            },
+            "nodes": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 3,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["id", "kind", "type", "position"],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+                  },
+                  "kind": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "type": "string"
+                  },
+                  "position": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["x", "y"],
+                    "properties": {
+                      "x": {
+                        "type": "number",
+                        "minimum": -10000,
+                        "maximum": 10000
+                      },
+                      "y": {
+                        "type": "number",
+                        "minimum": -10000,
+                        "maximum": 10000
+                      }
+                    }
+                  }
+                },
+                "oneOf": [
+                  {
+                    "properties": {
+                      "kind": {
+                        "const": "trigger"
+                      },
+                      "type": {
+                        "const": "receipt.v1"
+                      }
+                    }
+                  },
+                  {
+                    "properties": {
+                      "kind": {
+                        "const": "action"
+                      },
+                      "type": {
+                        "const": "record-receipt.v1"
+                      }
+                    }
+                  },
+                  {
+                    "properties": {
+                      "kind": {
+                        "const": "condition"
+                      },
+                      "type": {
+                        "const": "condition-placeholder.v1"
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            "edges": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 2,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["source", "target"],
+                "properties": {
+                  "source": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+                  },
+                  "target": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+                  }
+                }
+              }
+            }
+          }
         }
       }
     },
@@ -131,7 +333,8 @@
         "schemaVersion",
         "trigger",
         "action",
-        "createdAt"
+        "createdAt",
+        "graph"
       ],
       "properties": {
         "id": {
@@ -180,6 +383,107 @@
         },
         "createdAt": {
           "type": "string"
+        },
+        "graph": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["version", "nodes", "edges"],
+          "properties": {
+            "version": {
+              "const": 1
+            },
+            "nodes": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 3,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["id", "kind", "type", "position"],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+                  },
+                  "kind": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "type": "string"
+                  },
+                  "position": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["x", "y"],
+                    "properties": {
+                      "x": {
+                        "type": "number",
+                        "minimum": -10000,
+                        "maximum": 10000
+                      },
+                      "y": {
+                        "type": "number",
+                        "minimum": -10000,
+                        "maximum": 10000
+                      }
+                    }
+                  }
+                },
+                "oneOf": [
+                  {
+                    "properties": {
+                      "kind": {
+                        "const": "trigger"
+                      },
+                      "type": {
+                        "const": "receipt.v1"
+                      }
+                    }
+                  },
+                  {
+                    "properties": {
+                      "kind": {
+                        "const": "action"
+                      },
+                      "type": {
+                        "const": "record-receipt.v1"
+                      }
+                    }
+                  },
+                  {
+                    "properties": {
+                      "kind": {
+                        "const": "condition"
+                      },
+                      "type": {
+                        "const": "condition-placeholder.v1"
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            "edges": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 2,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["source", "target"],
+                "properties": {
+                  "source": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+                  },
+                  "target": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+                  }
+                }
+              }
+            }
+          }
         }
       }
     }
