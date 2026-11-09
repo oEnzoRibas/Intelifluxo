@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import WorkflowBuilder, { flowEdges, flowNodes } from "./WorkflowBuilder";
 import { defaultGraph } from "./workflow-graph";
@@ -17,6 +23,26 @@ const d: Definition = {
   graph: defaultGraph(),
   graphSource: "server",
 };
+it("restores focus after inspector dismissal and falls back after removal", () => {
+  render(
+    <WorkflowBuilder definition={d} onDirty={vi.fn()} onSaved={vi.fn()} />,
+  );
+  const node = screen.getByRole("button", { name: "Receipt Trigger" });
+  node.focus();
+  fireEvent.click(node);
+  fireEvent.click(screen.getByRole("button", { name: "Close" }));
+  expect(node).toHaveFocus();
+  fireEvent.click(node);
+  fireEvent.keyDown(screen.getByLabelText("Visual workflow builder"), {
+    key: "Escape",
+  });
+  expect(node).toHaveFocus();
+  fireEvent.click(node);
+  fireEvent.click(screen.getByRole("button", { name: "Remove node" }));
+  expect(
+    screen.getByRole("heading", { name: "Node list / no dragging" }),
+  ).toHaveFocus();
+});
 it("maps domain positions and directed edges without changing the graph", () => {
   const graph = defaultGraph();
   expect(flowNodes(graph)[1].position).toEqual({ x: 320, y: 0 });
@@ -156,7 +182,11 @@ it("supports non-drag removal, reconnection, reset and Escape from the node list
   listButton.focus();
   expect(listButton).toHaveFocus();
   fireEvent.click(listButton);
-  expect(screen.getByText("receipt.v1")).toBeInTheDocument();
+  expect(
+    within(screen.getByText("Configuration").closest("aside")!).getByText(
+      "receipt.v1",
+    ),
+  ).toBeInTheDocument();
   fireEvent.keyDown(listButton, { key: "Escape" });
   expect(
     screen.getByText("Select a node for information."),
@@ -429,5 +459,170 @@ it("keeps a rejected draft editable and dirty without reconciliation", async () 
     screen.queryByRole("button", { name: /Reload server version/ }),
   ).not.toBeInTheDocument();
   expect(onDirty).toHaveBeenLastCalledWith(true);
+  expect(
+    screen.queryByLabelText("Node validation errors"),
+  ).not.toBeInTheDocument();
   fetchMock.mockRestore();
+});
+
+it("attributes server node issues and moves focus from the summary", async () => {
+  const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+    new Response(
+      JSON.stringify({
+        error: "validation_failed",
+        issues: [
+          {
+            code: "non_executable_graph",
+            path: "/graph/nodes/2",
+            nodeId: "condition",
+          },
+        ],
+      }),
+      { status: 400 },
+    ),
+  );
+  render(
+    <WorkflowBuilder definition={d} onDirty={vi.fn()} onSaved={vi.fn()} />,
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: "+ Condition (placeholder)" }),
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: "Connect through condition" }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Save workflow" }));
+  const summary = await screen.findByLabelText("Node validation errors");
+  const node = screen.getByRole("button", {
+    name: "Condition · not executable",
+  });
+  expect(node).toHaveAttribute("aria-invalid", "true");
+  expect(node).toHaveAttribute("aria-describedby");
+  const canvasNode = screen.getByTestId("rf__node-condition");
+  expect(canvasNode).toHaveAttribute("aria-invalid", "true");
+  expect(canvasNode).toHaveAttribute(
+    "aria-describedby",
+    node.getAttribute("aria-describedby"),
+  );
+  const description = canvasNode.getAttribute("aria-describedby");
+  canvasNode.focus();
+  fireEvent.click(canvasNode);
+  expect(canvasNode).toHaveClass("builder-node--invalid");
+  expect(canvasNode).toHaveAttribute("aria-invalid", "true");
+  expect(canvasNode).toHaveAttribute("aria-describedby", description);
+  expect(screen.getByLabelText("Node validation errors")).toBeInTheDocument();
+  fireEvent.click(within(summary).getByRole("button"));
+  expect(node).toHaveFocus();
+  fireEvent.keyDown(canvasNode, { key: "ArrowRight" });
+  await waitFor(() =>
+    expect(
+      screen.queryByLabelText("Node validation errors"),
+    ).not.toBeInTheDocument(),
+  );
+  expect(screen.getByText("Unsaved changes")).toBeInTheDocument();
+  expect(canvasNode).toHaveStyle({ transform: "translate(165px,140px)" });
+  fetchMock.mockRestore();
+});
+
+it("marks a clean draft dirty when a canvas node moves", () => {
+  const onDirty = vi.fn();
+  render(
+    <WorkflowBuilder definition={d} onDirty={onDirty} onSaved={vi.fn()} />,
+  );
+  const node = screen.getByTestId("rf__node-trigger");
+  fireEvent.click(node);
+  expect(onDirty).toHaveBeenLastCalledWith(false);
+  fireEvent.keyDown(node, { key: "ArrowRight" });
+  expect(node).toHaveStyle({ transform: "translate(5px,0px)" });
+  expect(onDirty).toHaveBeenLastCalledWith(true);
+});
+
+it("renders connection handles with directed source and target semantics", () => {
+  render(
+    <WorkflowBuilder definition={d} onDirty={vi.fn()} onSaved={vi.fn()} />,
+  );
+  const trigger = screen.getByTestId("rf__node-trigger");
+  const action = screen.getByTestId("rf__node-action");
+  expect(trigger.querySelector(".react-flow__handle.source")).toHaveStyle({
+    "--port-hit-size": "44px",
+  });
+  expect(trigger.querySelector(".react-flow__handle.target")).toBeNull();
+  expect(action.querySelector(".react-flow__handle.target")).toHaveStyle({
+    "--port-hit-size": "44px",
+  });
+  expect(action.querySelector(".react-flow__handle.source")).toBeNull();
+});
+
+it("opens a mobile native modal and restores focus on cancel", () => {
+  Object.defineProperty(window, "matchMedia", {
+    configurable: true,
+    writable: true,
+    value: vi.fn(),
+  });
+  const media = vi.spyOn(window, "matchMedia").mockImplementation((query) => ({
+    matches: query.includes("max-width: 767px"),
+    media: query,
+    onchange: null,
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    dispatchEvent: vi.fn(),
+  }));
+  Object.defineProperty(HTMLDialogElement.prototype, "showModal", {
+    configurable: true,
+    writable: true,
+    value: vi.fn(),
+  });
+  const show = vi
+    .spyOn(HTMLDialogElement.prototype, "showModal")
+    .mockImplementation(function (this: HTMLDialogElement) {
+      this.setAttribute("open", "");
+      this.querySelector<HTMLElement>("button")?.focus();
+    });
+  render(
+    <WorkflowBuilder definition={d} onDirty={vi.fn()} onSaved={vi.fn()} />,
+  );
+  const node = screen.getByRole("button", { name: "Receipt Trigger" });
+  node.focus();
+  fireEvent.click(node);
+  const dialog = screen.getByRole("dialog", { name: "Node configuration" });
+  expect(dialog).toHaveAttribute("aria-modal", "true");
+  expect(show).toHaveBeenCalled();
+  expect(within(dialog).getByRole("button", { name: "Close" })).toHaveFocus();
+  fireEvent(dialog, new Event("cancel", { bubbles: false, cancelable: true }));
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  expect(node).toHaveFocus();
+  media.mockRestore();
+  show.mockRestore();
+});
+
+it("opens and dismisses the tablet library and restores focus", () => {
+  Object.defineProperty(window, "matchMedia", {
+    configurable: true,
+    writable: true,
+    value: vi.fn(),
+  });
+  const media = vi.spyOn(window, "matchMedia").mockImplementation((query) => ({
+    matches: query.includes("min-width: 768px"),
+    media: query,
+    onchange: null,
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    dispatchEvent: vi.fn(),
+  }));
+  render(
+    <WorkflowBuilder definition={d} onDirty={vi.fn()} onSaved={vi.fn()} />,
+  );
+  const open = screen.getByRole("button", { name: "Open node library" });
+  expect(open).toHaveAttribute("aria-expanded", "false");
+  fireEvent.click(open);
+  expect(open).toHaveAttribute("aria-expanded", "true");
+  const close = screen.getByRole("button", { name: "Close node library" });
+  expect(close).toHaveFocus();
+  fireEvent.keyDown(close, { key: "Escape" });
+  expect(open).toHaveAttribute("aria-expanded", "false");
+  expect(open).toHaveFocus();
+  media.mockRestore();
 });
