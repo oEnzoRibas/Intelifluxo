@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { definition, saveGraph, updateDefinition } from "./automation-api";
 import { conditionDraft, defaultGraph, graphValid } from "./workflow-graph";
 import { edgeIdentity } from "./condition-contract";
+import type { ConditionConfig } from "./condition-contract";
 
 const raw = {
   id: "123e4567-e89b-42d3-a456-426614174000",
@@ -100,6 +101,104 @@ describe("condition graph integration", () => {
       graph,
       active: true,
       expectedRevision: 2,
+    });
+  });
+  it.each<ConditionConfig>([
+    { fieldPath: "data.value", operator: "exists" },
+    {
+      fieldPath: "data.value",
+      operator: "equals",
+      expectedType: "string",
+      expectedValue: "hello",
+    },
+    {
+      fieldPath: "data.value",
+      operator: "equals",
+      expectedType: "number",
+      expectedValue: 42,
+    },
+    {
+      fieldPath: "data.value",
+      operator: "equals",
+      expectedType: "boolean",
+      expectedValue: false,
+    },
+    {
+      fieldPath: "data.value",
+      operator: "equals",
+      expectedType: "null",
+      expectedValue: null,
+    },
+  ])(
+    "sends exact save and activation condition payloads %#",
+    async (condition) => {
+      const graph = conditionDraft(raw.graph, false, condition);
+      const fetchMock = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValue(
+          new Response(
+            JSON.stringify({ ...raw, schemaVersion: 2, graph, revision: 2 }),
+          ),
+        );
+      await saveGraph(definition(raw), graph, new AbortController().signal);
+      expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toEqual({
+        expectedRevision: 1,
+        active: false,
+        name: raw.name,
+        schemaVersion: 2,
+        trigger: raw.trigger,
+        action: raw.action,
+        graph,
+      });
+      fetchMock.mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ...raw,
+            schemaVersion: 2,
+            graph,
+            active: true,
+            revision: 3,
+          }),
+        ),
+      );
+      await updateDefinition(
+        definition({ ...raw, schemaVersion: 2, graph, revision: 2 }),
+        new AbortController().signal,
+      );
+      expect(JSON.parse(String(fetchMock.mock.calls[1][1]?.body))).toEqual({
+        expectedRevision: 2,
+        active: true,
+        name: raw.name,
+        schemaVersion: 2,
+        trigger: raw.trigger,
+        action: raw.action,
+        graph,
+      });
+    },
+  );
+  it("preserves schema and graph when deactivating", async () => {
+    const graph = conditionDraft(raw.graph, false, config);
+    const active = {
+      ...raw,
+      active: true,
+      schemaVersion: 2,
+      graph,
+      revision: 4,
+    };
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(
+        new Response(JSON.stringify({ ...active, active: false, revision: 5 })),
+      );
+    await updateDefinition(definition(active), new AbortController().signal);
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toEqual({
+      expectedRevision: 4,
+      active: false,
+      name: raw.name,
+      schemaVersion: 2,
+      trigger: raw.trigger,
+      action: raw.action,
+      graph,
     });
   });
   it("does not write a legacy default without an explicit server graph", async () => {

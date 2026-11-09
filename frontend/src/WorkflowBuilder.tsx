@@ -559,6 +559,8 @@ export default function WorkflowBuilder({
           invalid_topology: "Invalid workflow path",
           projection_mismatch: "Workflow does not match the automation",
           non_executable_graph: "Workflow is not executable",
+          conditions_disabled:
+            "Condition writes are disabled (CONDITIONS_WRITES_ENABLED)",
         };
         setProblem(
           `Server rejected the workflow: ${err.issues.map((issue) => labels[issue.code] ?? "Invalid workflow").join("; ")}. Your draft is preserved.`,
