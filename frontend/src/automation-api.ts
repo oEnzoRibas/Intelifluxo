@@ -9,6 +9,7 @@ import {
   uuid,
 } from "./api";
 import { defaultGraph, graphValid, type WorkflowGraph } from "./workflow-graph";
+import { conditionGraphValid } from "./condition-contract";
 
 export type Definition = {
   id: string;
@@ -16,12 +17,12 @@ export type Definition = {
   revision: number;
   name: string;
   active: boolean;
-  schemaVersion: 1;
+  schemaVersion: 1 | 2;
   trigger: { type: "receipt.v1" };
   action: { type: "record-receipt.v1" };
   createdAt: string;
   graph: WorkflowGraph;
-  graphSource: "server" | "legacy-default";
+  graphSource: "server" | "legacy-default" | "condition-v2";
 };
 export type Execution = {
   id: string;
@@ -54,8 +55,8 @@ export const validText = (v: unknown, max: number): v is string =>
   !/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u.test(
     v,
   );
-const fixedValid = (v: Record<string, unknown>) =>
-  v.schemaVersion === 1 &&
+const fixedValid = (v: Record<string, unknown>, schemaVersion: 1 | 2 = 1) =>
+  v.schemaVersion === schemaVersion &&
   object(v.trigger) &&
   exactKeys(v.trigger, ["type"]) &&
   v.trigger.type === fixed.trigger.type &&
@@ -82,15 +83,25 @@ export function definition(v: unknown): Definition {
     !validText(v.name, 200) ||
     !integerAtLeast(v.revision, 1) ||
     typeof v.active !== "boolean" ||
-    !fixedValid(v) ||
+    !(fixedValid(v, 1) || fixedValid(v, 2)) ||
     !dateTime(v.createdAt) ||
-    ("graph" in v && !graphValid(v.graph, v.active === true))
+    (v.schemaVersion === 1
+      ? "graph" in v &&
+        (!object(v.graph) ||
+          v.graph.version !== 1 ||
+          !graphValid(v.graph, v.active === true))
+      : !("graph" in v) || !conditionGraphValid(v.graph))
   )
     throw new ApiError("invalid");
   return {
     ...v,
     graph: "graph" in v ? v.graph : defaultGraph(),
-    graphSource: "graph" in v ? "server" : "legacy-default",
+    graphSource:
+      v.schemaVersion === 2
+        ? "condition-v2"
+        : "graph" in v
+          ? "server"
+          : "legacy-default",
   } as Definition;
 }
 export function execution(v: unknown): Execution {
@@ -255,12 +266,22 @@ export async function createDefinition(
   return v;
 }
 export async function updateDefinition(d: Definition, signal: AbortSignal) {
+  if (
+    d.graphSource === "legacy-default" ||
+    !(d.schemaVersion === 1
+      ? d.graph.version === 1 && graphValid(d.graph, !d.active)
+      : conditionGraphValid(d.graph))
+  )
+    throw new ApiError("invalid");
   const v = definition(
     await call(`/automations/${encodeURIComponent(d.id)}`, signal, "PUT", {
       expectedRevision: d.revision,
       active: !d.active,
       name: d.name,
-      ...fixed,
+      schemaVersion: d.schemaVersion,
+      trigger: d.trigger,
+      action: d.action,
+      graph: d.graph,
     }),
   );
   if (
@@ -268,7 +289,9 @@ export async function updateDefinition(d: Definition, signal: AbortSignal) {
     v.scope !== d.scope ||
     v.name !== d.name ||
     v.active === d.active ||
-    v.revision !== d.revision + 1
+    v.revision !== d.revision + 1 ||
+    v.schemaVersion !== d.schemaVersion ||
+    canonical(v.graph) !== canonical(d.graph)
   )
     throw new ApiError("invalid");
   return v;
@@ -287,12 +310,22 @@ export async function saveGraph(
   graph: WorkflowGraph,
   signal: AbortSignal,
 ) {
+  if (
+    d.graphSource === "legacy-default" ||
+    !(graph.version === 1
+      ? graphValid(graph, d.active)
+      : graph.version === 2 && conditionGraphValid(graph)) ||
+    (d.active && graph.version !== d.schemaVersion)
+  )
+    throw new ApiError("invalid");
   const v = definition(
     await call(`/automations/${encodeURIComponent(d.id)}`, signal, "PUT", {
       expectedRevision: d.revision,
       active: d.active,
       name: d.name,
-      ...fixed,
+      schemaVersion: graph.version,
+      trigger: d.trigger,
+      action: d.action,
       graph,
     }),
   );
@@ -302,7 +335,8 @@ export async function saveGraph(
     v.name !== d.name ||
     v.active !== d.active ||
     v.revision !== d.revision + 1 ||
-    v.graphSource !== "server" ||
+    v.graphSource === "legacy-default" ||
+    v.schemaVersion !== graph.version ||
     canonical(v.graph) !== canonical(graph)
   )
     throw new ApiError("invalid");

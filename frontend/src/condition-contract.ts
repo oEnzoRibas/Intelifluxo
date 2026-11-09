@@ -19,7 +19,7 @@ export type ConditionGraph = {
   nodes: Array<{
     id: string;
     kind: "trigger" | "condition" | "action" | "end";
-    type: string;
+    type: "receipt.v1" | "condition.v1" | "record-receipt.v1" | "end.v1";
     position: { x: number; y: number };
     config?: ConditionConfig;
   }>;
