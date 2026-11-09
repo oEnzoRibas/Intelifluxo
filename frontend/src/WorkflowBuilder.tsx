@@ -18,6 +18,7 @@ import "@xyflow/react/dist/style.css";
 import "@fontsource/inter/latin-400.css";
 import "@fontsource/inter/latin-600.css";
 import "@fontsource/inter/latin-700.css";
+import { edgeIdentity } from "./condition-contract";
 import {
   ConflictError,
   ValidationError,
@@ -34,7 +35,11 @@ import {
 } from "./workflow-graph";
 
 type BuilderNode = Node<
-  { label: React.ReactNode; kind: GraphNode["kind"] },
+  {
+    label: React.ReactNode;
+    kind: GraphNode["kind"];
+    version: WorkflowGraph["version"];
+  },
   "builder"
 >;
 
@@ -47,9 +52,27 @@ function CanvasNode({ data }: NodeProps<BuilderNode>) {
         <Handle type="target" position={Position.Top} style={style} />
       )}
       {data.label}
-      {data.kind !== "action" && (
+      {data.kind === "condition" && data.version === 2 ? (
+        <>
+          <Handle
+            id="TRUE"
+            type="source"
+            position={Position.Bottom}
+            style={{ ...style, left: "30%" }}
+            aria-label="TRUE output"
+          />
+          <Handle
+            id="FALSE"
+            type="source"
+            position={Position.Bottom}
+            style={{ ...style, left: "70%" }}
+            aria-label="FALSE output"
+          />
+        </>
+      ) : data.kind !== "end" &&
+        (data.kind !== "action" || data.version === 2) ? (
         <Handle type="source" position={Position.Bottom} style={style} />
-      )}
+      ) : null}
     </div>
   );
 }
@@ -75,13 +98,18 @@ export const nodeLabel = (node: GraphNode) =>
     ? "Receipt Trigger"
     : node.kind === "action"
       ? "Record Receipt Action"
-      : "Condition · not executable";
+      : node.kind === "end"
+        ? "End"
+        : node.type === "condition.v1"
+          ? "Condition"
+          : "Condition · not executable";
 export function flowNodes(graph: WorkflowGraph) {
   return graph.nodes.map((n) => ({
     id: n.id,
     position: n.position,
     data: {
       kind: n.kind,
+      version: graph.version,
       label: (
         <>
           <span className="builder-node-type">
@@ -89,7 +117,11 @@ export function flowNodes(graph: WorkflowGraph) {
               ? "01 / TRIGGER"
               : n.kind === "action"
                 ? "02 / ACTION"
-                : "◇ / PLANNED"}
+                : n.kind === "end"
+                  ? "04 / END"
+                  : graph.version === 2
+                    ? "02 / CONDITION"
+                    : "◇ / PLANNED"}
           </span>
           <span className="builder-node-name">{nodeLabel(n)}</span>
           <span className="builder-node-id">{n.type}</span>
@@ -98,7 +130,11 @@ export function flowNodes(graph: WorkflowGraph) {
               ? "OUTPUT / RECEIPT"
               : n.kind === "action"
                 ? "INPUT / RECEIPT"
-                : "Blocks activation"}
+                : n.kind === "end"
+                  ? "INPUT"
+                  : graph.version === 2
+                    ? "TRUE / FALSE"
+                    : "Blocks activation"}
           </span>
         </>
       ),
@@ -110,7 +146,10 @@ export function flowNodes(graph: WorkflowGraph) {
 export function flowEdges(graph: WorkflowGraph) {
   return graph.edges.map((e) => ({
     ...e,
-    id: `${e.source}->${e.target}`,
+    id: edgeIdentity(e),
+    sourceHandle: e.sourcePort,
+    label: e.sourcePort,
+    ariaLabel: `${e.source} to ${e.target}${e.sourcePort ? ` via ${e.sourcePort}` : ""}`,
     markerEnd: { type: MarkerType.ArrowClosed, color: "#b6d3ff" },
     type: "step",
   }));
@@ -174,22 +213,16 @@ export default function WorkflowBuilder({
   const serializedDraft = JSON.stringify(draft);
   useEffect(() => setNodeIssues([]), [serializedDraft]);
   const dirty = serializedDraft !== JSON.stringify(baseline.graph);
+  const persisted = baseline.graphSource !== "legacy-default";
+  const v2 = draft.version === 2;
   const editable =
-    baseline.graphSource === "server" &&
-    !definition.active &&
-    !pending &&
-    !locked &&
-    !busy;
+    persisted && !definition.active && !pending && !locked && !busy;
   const valid = graphValid(draft);
   useEffect(() => {
     onDirty(
-      dirty ||
-        locked ||
-        pending ||
-        !graphValid(draft, true) ||
-        baseline.graphSource !== "server",
+      dirty || locked || pending || !graphValid(draft, true) || !persisted,
     );
-  }, [dirty, locked, pending, draft, baseline.graphSource, onDirty]);
+  }, [dirty, locked, pending, draft, persisted, onDirty]);
   const nodes = useMemo(
     () =>
       flowNodes(draft).map((node) => ({
@@ -213,7 +246,7 @@ export default function WorkflowBuilder({
   const edges = useMemo(() => flowEdges(draft), [draft]);
   const chosen = draft.nodes.find((n) => n.id === selected);
   function add(kind: GraphNode["kind"]) {
-    if (!editable || draft.nodes.some((n) => n.kind === kind)) return;
+    if (!editable || v2 || draft.nodes.some((n) => n.kind === kind)) return;
     const n: GraphNode =
       kind === "trigger"
         ? { id: "trigger", kind, type: "receipt.v1", position: { x: 0, y: 0 } }
@@ -233,7 +266,7 @@ export default function WorkflowBuilder({
     setDraft((g) => ({ ...g, nodes: [...g.nodes, n] }));
   }
   function connect(c: Connection) {
-    if (!editable || !c.source || !c.target) return;
+    if (!editable || v2 || !c.source || !c.target) return;
     const source = draft.nodes.find((n) => n.id === c.source),
       target = draft.nodes.find((n) => n.id === c.target);
     if (
@@ -282,18 +315,18 @@ export default function WorkflowBuilder({
     });
   }
   function edgeChanges(changes: EdgeChange[]) {
-    if (!editable) return;
+    if (!editable || v2) return;
     const removed = new Set(
       changes.filter((c) => c.type === "remove").map((c) => c.id),
     );
     if (removed.size)
       setDraft((g) => ({
         ...g,
-        edges: g.edges.filter((e) => !removed.has(`${e.source}->${e.target}`)),
+        edges: g.edges.filter((e) => !removed.has(edgeIdentity(e))),
       }));
   }
   async function save() {
-    if (!editable || !valid || !dirty) return;
+    if (!editable || v2 || !valid || !dirty) return;
     setPending(true);
     setProblem("");
     const controller = new AbortController();
@@ -384,25 +417,31 @@ export default function WorkflowBuilder({
           <h2>Visual Workflow Builder</h2>
           <p
             role="status"
-            className={`builder-status ${dirty || pending || baseline.graphSource !== "server" ? "builder-status--dirty" : "builder-status--saved"}`}
+            className={`builder-status ${dirty || pending || !persisted ? "builder-status--dirty" : "builder-status--saved"}`}
           >
             {pending
               ? "Saving or loading…"
               : dirty
                 ? "Unsaved changes"
-                : baseline.graphSource === "server"
+                : persisted
                   ? `Saved · revision ${baseline.revision}`
                   : "Preview · not persisted"}
           </p>
         </div>
-        <button disabled={!editable || !dirty || !valid} onClick={save}>
+        <button disabled={!editable || v2 || !dirty || !valid} onClick={save}>
           Save workflow
         </button>
       </div>
       {definition.active && (
         <p>Deactivate this automation before editing its workflow.</p>
       )}
-      {baseline.graphSource !== "server" && (
+      {v2 && !definition.active && (
+        <p>
+          Condition workflow topology is fixed. Position changes cannot yet be
+          saved.
+        </p>
+      )}
+      {!persisted && (
         <p role="alert">
           This server does not support graph persistence. The workflow preview
           is read-only; upgrade the server to edit, save, or activate it.
@@ -445,7 +484,7 @@ export default function WorkflowBuilder({
           → action.
         </p>
       )}
-      {draft.nodes.some((n) => n.kind === "condition") && (
+      {!v2 && draft.nodes.some((n) => n.kind === "condition") && (
         <p>Condition is a placeholder and blocks activation.</p>
       )}
       <div className="builder-layout">
@@ -475,21 +514,23 @@ export default function WorkflowBuilder({
           <p>Add a node using the controls below.</p>
           <button
             disabled={
-              !editable || draft.nodes.some((n) => n.kind === "trigger")
+              !editable || v2 || draft.nodes.some((n) => n.kind === "trigger")
             }
             onClick={() => add("trigger")}
           >
             + Receipt Trigger
           </button>
           <button
-            disabled={!editable || draft.nodes.some((n) => n.kind === "action")}
+            disabled={
+              !editable || v2 || draft.nodes.some((n) => n.kind === "action")
+            }
             onClick={() => add("action")}
           >
             + Record Receipt Action
           </button>
           <button
             disabled={
-              !editable || draft.nodes.some((n) => n.kind === "condition")
+              !editable || v2 || draft.nodes.some((n) => n.kind === "condition")
             }
             onClick={() => add("condition")}
           >
@@ -497,8 +538,23 @@ export default function WorkflowBuilder({
           </button>
           <button disabled>ViaCEP · future</button>
           <h3>Accessible path controls</h3>
+          {v2 && (
+            <ul aria-label="Workflow connections">
+              {draft.edges.map((edge) => (
+                <li key={edgeIdentity(edge)}>
+                  {nodeLabel(
+                    draft.nodes.find((node) => node.id === edge.source)!,
+                  )}{" "}
+                  {edge.sourcePort ? `— ${edge.sourcePort} →` : "→"}{" "}
+                  {nodeLabel(
+                    draft.nodes.find((node) => node.id === edge.target)!,
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
           <button
-            disabled={!editable}
+            disabled={!editable || v2}
             onClick={() =>
               setDraft((g) => {
                 const defaults = defaultGraph();
@@ -533,6 +589,7 @@ export default function WorkflowBuilder({
           <button
             disabled={
               !editable ||
+              v2 ||
               draft.nodes.length !== 2 ||
               !draft.nodes.some((n) => n.kind === "trigger") ||
               !draft.nodes.some((n) => n.kind === "action")
@@ -549,7 +606,7 @@ export default function WorkflowBuilder({
             Connect trigger to action
           </button>
           <button
-            disabled={!editable || draft.nodes.length !== 3}
+            disabled={!editable || v2 || draft.nodes.length !== 3}
             onClick={() => {
               const t = draft.nodes.find((n) => n.kind === "trigger"),
                 c = draft.nodes.find((n) => n.kind === "condition"),
@@ -584,7 +641,7 @@ export default function WorkflowBuilder({
                 selectNode(node.id, event.currentTarget as HTMLElement)
               }
               nodesDraggable={editable}
-              nodesConnectable={editable}
+              nodesConnectable={editable && !v2}
               edgesFocusable
               fitView
             >
@@ -656,7 +713,7 @@ export default function WorkflowBuilder({
                   </p>
                   <button onClick={closeInspector}>Close</button>
                   <button
-                    disabled={!editable}
+                    disabled={!editable || v2}
                     onClick={() => {
                       setDraft((g) => ({
                         ...g,
@@ -694,7 +751,7 @@ export default function WorkflowBuilder({
                 </p>
                 <button onClick={closeInspector}>Close</button>
                 <button
-                  disabled={!editable}
+                  disabled={!editable || v2}
                   onClick={() => {
                     setDraft((g) => ({
                       ...g,
