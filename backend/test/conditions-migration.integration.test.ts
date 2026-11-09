@@ -52,6 +52,8 @@ describe.skipIf(process.env.INTEGRATION !== "1")("condition migrations", () => {
       "008": "immutable_event_and_execution",
       "009": "automation_conditions",
       "010": "validate_automation_conditions",
+      "011": "execution_result_targets",
+      "012": "validate_execution_result_targets",
     };
     await pool.query(
       await readFile(
@@ -151,10 +153,62 @@ describe.skipIf(process.env.INTEGRATION !== "1")("condition migrations", () => {
       ).rows[0].convalidated,
     ).toBe(false);
     await migration("010");
+    const newEvent = randomUUID();
+    await pool.query(
+      "INSERT INTO events (id,scope,idempotency_key,content) VALUES ($1,'upgrade','key','{}')",
+      [newEvent],
+    );
+    await pool.query(
+      "INSERT INTO event_automation_context VALUES ($1,'receipt.v1')",
+      [newEvent],
+    );
+    const prior = {
+      kind: "condition-execution.v1",
+      eventId: newEvent,
+      decision: {
+        nodeId: "c",
+        outcome: "TRUE",
+        sourcePort: "TRUE",
+        targetNodeId: "wrong",
+      },
+      action: { nodeId: "a", status: "pending", receipt: null },
+      failure: {
+        classification: "transient",
+        code: "action_transient",
+        nodeId: "a",
+      },
+    };
+    await pool.query(
+      "INSERT INTO automation_executions (id,event_id,automation_id,revision,schema_version,trigger_type,action_type,result) VALUES ($1,$2,$3,1,2,'receipt.v1','record-receipt.v1',$4)",
+      [randomUUID(), newEvent, definition, JSON.stringify(prior)],
+    );
+    await migration("011");
     expect(
       (
         await pool.query(
-          "SELECT to_jsonb(r)::text AS row FROM automation_definition_revisions r UNION ALL SELECT to_jsonb(e)::text FROM automation_executions e ORDER BY 1",
+          "SELECT convalidated FROM pg_constraint WHERE conname='automation_execution_target_valid_v2' AND conrelid='automation_executions'::regclass",
+        )
+      ).rows[0].convalidated,
+    ).toBe(false);
+    await expect(migration("012")).rejects.toThrow();
+    prior.decision.targetNodeId = "a";
+    await pool.query(
+      "UPDATE automation_executions SET result=$1 WHERE event_id=$2",
+      [JSON.stringify(prior), newEvent],
+    );
+    await migration("012");
+    expect(
+      (
+        await pool.query(
+          "SELECT convalidated FROM pg_constraint WHERE conname='automation_execution_target_valid_v2' AND conrelid='automation_executions'::regclass",
+        )
+      ).rows[0].convalidated,
+    ).toBe(true);
+    expect(
+      (
+        await pool.query(
+          "SELECT to_jsonb(r)::text AS row FROM automation_definition_revisions r UNION ALL SELECT to_jsonb(e)::text FROM automation_executions e WHERE event_id <> $1 ORDER BY 1",
+          [newEvent],
         )
       ).rows,
     ).toEqual(before.rows);
@@ -217,6 +271,71 @@ describe.skipIf(process.env.INTEGRATION !== "1")("condition migrations", () => {
       "INSERT INTO automation_executions (id,event_id,automation_id,revision,schema_version,trigger_type,action_type,result) VALUES ($1,$2,$3,1,2,'receipt.v1','record-receipt.v1',$4)",
       [randomUUID(), event, id, JSON.stringify(result)],
     );
+    const failure = {
+      classification: "transient",
+      code: "action_transient",
+      nodeId: "a",
+    };
+    const receipt = { kind: "local-receipt.v1", eventId: event, message: "ok" };
+    const decision = {
+      nodeId: "c",
+      outcome: "TRUE",
+      sourcePort: "TRUE",
+      targetNodeId: "a",
+    };
+    const envelopes = [
+      {
+        ...result,
+        decision,
+        action: { nodeId: "a", status: "executed", receipt },
+        failure: null,
+      },
+      {
+        ...result,
+        decision,
+        action: { nodeId: "a", status: "pending", receipt: null },
+        failure,
+      },
+      {
+        ...result,
+        decision,
+        action: { nodeId: "a", status: "not_executed", receipt: null },
+        failure,
+      },
+      {
+        ...result,
+        decision: null,
+        action: { nodeId: null, status: "not_executed", receipt: null },
+        failure,
+      },
+      result,
+    ];
+    for (const envelope of envelopes) {
+      await pool.query(
+        "UPDATE automation_executions SET result=$1 WHERE automation_id=$2",
+        [JSON.stringify(envelope), id],
+      );
+    }
+    const mismatches = [
+      ...envelopes.slice(0, 3).map((envelope) => ({
+        ...envelope,
+        decision: { ...decision, targetNodeId: "e" },
+      })),
+      { ...result, decision: { ...result.decision, targetNodeId: "a" } },
+      {
+        ...envelopes[2],
+        action: { nodeId: null, status: "not_executed", receipt: null },
+      },
+      { ...envelopes[2], decision: result.decision },
+    ];
+    for (const envelope of mismatches) {
+      await expect(
+        pool.query(
+          "UPDATE automation_executions SET result=$1 WHERE automation_id=$2",
+          [JSON.stringify(envelope), id],
+        ),
+      ).rejects.toThrow();
+    }
     await expect(
       pool.query(
         "UPDATE automation_executions SET result='null'::jsonb WHERE automation_id=$1",

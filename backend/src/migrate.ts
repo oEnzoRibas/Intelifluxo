@@ -79,6 +79,29 @@ try {
       "utf8",
     ),
   );
+  const targets = await pool.query<{ present: boolean }>(
+    "SELECT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'automation_executions'::regclass AND conname = 'automation_execution_target_valid_v2') AS present",
+  );
+  if (!targets.rows[0].present) {
+    await pool.query(
+      await readFile(
+        new URL(
+          "../migrations/011_execution_result_targets.sql",
+          import.meta.url,
+        ),
+        "utf8",
+      ),
+    );
+  }
+  await pool.query(
+    await readFile(
+      new URL(
+        "../migrations/012_validate_execution_result_targets.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  );
   console.log("migration applied");
 } finally {
   await pool.end();
