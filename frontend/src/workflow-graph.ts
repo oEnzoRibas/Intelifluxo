@@ -1,15 +1,27 @@
 import { exactKeys, object } from "./api";
+import {
+  conditionConfigValid,
+  conditionGraphValid,
+  type ConditionConfig,
+  type ConditionGraph,
+} from "./condition-contract";
 
 export type GraphNode = {
   id: string;
-  kind: "trigger" | "action" | "condition";
-  type: "receipt.v1" | "record-receipt.v1" | "condition-placeholder.v1";
+  kind: "trigger" | "action" | "condition" | "end";
+  type:
+    | "receipt.v1"
+    | "record-receipt.v1"
+    | "condition-placeholder.v1"
+    | "condition.v1"
+    | "end.v1";
   position: { x: number; y: number };
+  config?: ConditionConfig;
 };
 export type WorkflowGraph = {
-  version: 1;
+  version: 1 | 2;
   nodes: GraphNode[];
-  edges: { source: string; target: string }[];
+  edges: { source: string; target: string; sourcePort?: "TRUE" | "FALSE" }[];
 };
 
 export function defaultGraph(): WorkflowGraph {
@@ -33,11 +45,72 @@ export function defaultGraph(): WorkflowGraph {
   };
 }
 
+/** Explicit conversion only; never change an active definition. */
+export function conditionDraft(
+  graph: WorkflowGraph,
+  active: boolean,
+  config: ConditionConfig,
+): ConditionGraph {
+  if (
+    active ||
+    graph.version !== 1 ||
+    !graphValid(graph) ||
+    !conditionConfigValid(config)
+  )
+    throw new Error("Cannot convert graph");
+  const trigger = graph.nodes.find((n) => n.kind === "trigger")!;
+  const action = graph.nodes.find((n) => n.kind === "action")!;
+  const used = new Set(graph.nodes.map((n) => n.id));
+  const allocate = (base: string) => {
+    let id = base,
+      suffix = 1;
+    while (used.has(id)) id = `${base}-${suffix++}`;
+    used.add(id);
+    return id;
+  };
+  const old = graph.nodes.find((n) => n.kind === "condition");
+  const condition = {
+    id: allocate("condition"),
+    kind: "condition" as const,
+    type: "condition.v1" as const,
+    position: old ? { ...old.position } : { x: 160, y: 140 },
+    config: { ...config },
+  };
+  const end = {
+    id: allocate("end"),
+    kind: "end" as const,
+    type: "end.v1" as const,
+    position: { x: 640, y: 0 },
+  };
+  const result: ConditionGraph = {
+    version: 2,
+    nodes: [
+      { ...trigger, type: "receipt.v1", position: { ...trigger.position } },
+      condition,
+      {
+        ...action,
+        type: "record-receipt.v1",
+        position: { ...action.position },
+      },
+      end,
+    ],
+    edges: [
+      { source: trigger.id, target: condition.id },
+      { source: condition.id, sourcePort: "TRUE", target: action.id },
+      { source: condition.id, sourcePort: "FALSE", target: end.id },
+      { source: action.id, target: end.id },
+    ],
+  };
+  if (!conditionGraphValid(result)) throw new Error("Cannot convert graph");
+  return result;
+}
+
 /** Strictly accept only complete v1 paths. Unknown future graphs fail closed. */
 export function graphValid(
   value: unknown,
   active = false,
 ): value is WorkflowGraph {
+  if (object(value) && value.version === 2) return conditionGraphValid(value);
   if (
     !object(value) ||
     !exactKeys(value, ["version", "nodes", "edges"]) ||
