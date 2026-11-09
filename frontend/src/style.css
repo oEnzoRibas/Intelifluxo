@@ -735,3 +735,13 @@ pre {
     overflow-y: auto;
   }
 }
+.execution-result {
+  border-inline-start: 3px solid #788596;
+  padding-inline-start: 0.75rem;
+}
+.execution-result--executed {
+  border-color: #16805c;
+}
+.execution-result--ignored {
+  border-color: #496caa;
+}
