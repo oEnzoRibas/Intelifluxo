@@ -83,6 +83,60 @@ it("hydrates a persisted condition graph into the builder without changing its t
   ).toBeDisabled();
   expect(screen.getByRole("button", { name: "Save workflow" })).toBeDisabled();
 });
+it("saves a non-drag v2 position edit and reopens the saved topology", async () => {
+  const graph = conditionDraft(defaultGraph(), false, {
+    fieldPath: "data.value",
+    operator: "exists",
+  });
+  const loaded: Definition = { ...d, schemaVersion: 2, graph };
+  const onSaved = vi.fn();
+  const fetchMock = vi
+    .spyOn(globalThis, "fetch")
+    .mockImplementation(async (_url, init) => {
+      const body = JSON.parse(String(init?.body));
+      return new Response(
+        JSON.stringify({
+          ...loaded,
+          graphSource: undefined,
+          graph: body.graph,
+          revision: 2,
+        }),
+      );
+    });
+  const view = render(
+    <WorkflowBuilder definition={loaded} onDirty={vi.fn()} onSaved={onSaved} />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Condition" }));
+  fireEvent.click(screen.getByRole("button", { name: "Move right" }));
+  fireEvent.click(screen.getByRole("button", { name: "Save workflow" }));
+  await waitFor(() => expect(onSaved).toHaveBeenCalled());
+  const body = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
+  expect(body.expectedRevision).toBe(1);
+  expect(body.schemaVersion).toBe(2);
+  expect(body.graph.edges).toEqual(graph.edges);
+  expect(
+    body.graph.nodes.find(
+      (node: { kind: string }) => node.kind === "condition",
+    ),
+  ).toMatchObject({
+    id: graph.nodes[1].id,
+    position: { x: graph.nodes[1].position.x + 20 },
+    config: { fieldPath: "data.value", operator: "exists" },
+  });
+  view.unmount();
+  render(
+    <WorkflowBuilder
+      definition={onSaved.mock.calls[0][0]}
+      onDirty={vi.fn()}
+      onSaved={vi.fn()}
+    />,
+  );
+  expect(screen.getByRole("button", { name: "Save workflow" })).toBeDisabled();
+  expect(screen.getByLabelText("Workflow connections")).toHaveTextContent(
+    "FALSE",
+  );
+  fetchMock.mockRestore();
+});
 it("restores focus after inspector dismissal and falls back after removal", () => {
   render(
     <WorkflowBuilder definition={d} onDirty={vi.fn()} onSaved={vi.fn()} />,

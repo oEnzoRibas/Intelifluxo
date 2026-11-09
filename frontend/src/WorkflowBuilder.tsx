@@ -326,7 +326,7 @@ export default function WorkflowBuilder({
       }));
   }
   async function save() {
-    if (!editable || v2 || !valid || !dirty) return;
+    if (!editable || !valid || !dirty) return;
     setPending(true);
     setProblem("");
     const controller = new AbortController();
@@ -428,7 +428,7 @@ export default function WorkflowBuilder({
                   : "Preview · not persisted"}
           </p>
         </div>
-        <button disabled={!editable || v2 || !dirty || !valid} onClick={save}>
+        <button disabled={!editable || !dirty || !valid} onClick={save}>
           Save workflow
         </button>
       </div>
@@ -437,8 +437,7 @@ export default function WorkflowBuilder({
       )}
       {v2 && !definition.active && (
         <p>
-          Condition workflow topology is fixed. Position changes cannot yet be
-          saved.
+          Condition workflow topology is fixed. Position changes can be saved.
         </p>
       )}
       {!persisted && (
@@ -685,6 +684,47 @@ export default function WorkflowBuilder({
               {nodeLabel(n)}
             </button>
           ))}
+          {v2 && chosen && (
+            <div aria-label="Move selected node without dragging">
+              {(
+                [
+                  ["left", -20, 0],
+                  ["right", 20, 0],
+                  ["up", 0, -20],
+                  ["down", 0, 20],
+                ] as const
+              ).map(([direction, x, y]) => (
+                <button
+                  key={direction}
+                  disabled={!editable}
+                  onClick={() =>
+                    setDraft((g) => ({
+                      ...g,
+                      nodes: g.nodes.map((node) =>
+                        node.id === chosen.id
+                          ? {
+                              ...node,
+                              position: {
+                                x: Math.max(
+                                  -10000,
+                                  Math.min(10000, node.position.x + x),
+                                ),
+                                y: Math.max(
+                                  -10000,
+                                  Math.min(10000, node.position.y + y),
+                                ),
+                              },
+                            }
+                          : node,
+                      ),
+                    }))
+                  }
+                >
+                  Move {direction}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
         {mobile ? (
           chosen && (
