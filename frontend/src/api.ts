@@ -2,7 +2,12 @@ export type Profile = { profile: string; limitations: string[] };
 export type EventDetail = {
   id: string;
   scope: string;
-  content: { type: "receipt.v1"; target: "local-receipt"; message: string };
+  content: {
+    type: "receipt.v1";
+    target: "local-receipt";
+    message: string;
+    data?: Record<string, unknown>;
+  };
   createdAt: string;
   publication: "pending" | "confirmed";
   status:
@@ -165,7 +170,11 @@ export async function getEvent(
     typeof v.scope !== "string" ||
     !dateTime(v.createdAt) ||
     !object(v.content) ||
-    !exactKeys(v.content, ["type", "target", "message"]) ||
+    !(
+      exactKeys(v.content, ["type", "target", "message"]) ||
+      (exactKeys(v.content, ["type", "target", "message", "data"]) &&
+        object(v.content.data))
+    ) ||
     v.content.type !== "receipt.v1" ||
     v.content.target !== "local-receipt" ||
     typeof v.content.message !== "string" ||
