@@ -18,7 +18,11 @@ import "@xyflow/react/dist/style.css";
 import "@fontsource/inter/latin-400.css";
 import "@fontsource/inter/latin-600.css";
 import "@fontsource/inter/latin-700.css";
-import { edgeIdentity } from "./condition-contract";
+import {
+  conditionConfigValid,
+  edgeIdentity,
+  type ConditionConfig,
+} from "./condition-contract";
 import {
   ConflictError,
   ValidationError,
@@ -29,6 +33,7 @@ import {
 } from "./automation-api";
 import {
   defaultGraph,
+  conditionDraft,
   graphValid,
   type GraphNode,
   type WorkflowGraph,
@@ -77,6 +82,178 @@ function CanvasNode({ data }: NodeProps<BuilderNode>) {
   );
 }
 const nodeTypes = { builder: CanvasNode };
+
+function ConditionInspector({
+  config,
+  disabled,
+  onChange,
+}: {
+  config: ConditionConfig;
+  disabled: boolean;
+  onChange: (config: ConditionConfig) => void;
+}) {
+  const invalid = !conditionConfigValid(config);
+  const valueConfig = config.operator === "exists" ? null : config;
+  const [numberText, setNumberText] = useState(() =>
+    valueConfig?.expectedType === "number"
+      ? String(valueConfig.expectedValue)
+      : "0",
+  );
+  return (
+    <fieldset disabled={disabled}>
+      <legend>Condition configuration</legend>
+      <label>
+        Field path
+        <input
+          value={config.fieldPath}
+          aria-invalid={invalid || undefined}
+          onChange={(event) =>
+            onChange({ ...config, fieldPath: event.target.value })
+          }
+        />
+      </label>
+      <label>
+        Operator
+        <select
+          value={config.operator}
+          onChange={(event) => {
+            const operator = event.target.value as ConditionConfig["operator"];
+            if (operator === "exists")
+              onChange({ fieldPath: config.fieldPath, operator });
+            else {
+              const expectedType =
+                operator === "greater_than" || operator === "less_than"
+                  ? "number"
+                  : operator === "contains"
+                    ? "string"
+                    : (valueConfig?.expectedType ?? "string");
+              const expectedValue =
+                expectedType === valueConfig?.expectedType
+                  ? valueConfig.expectedValue
+                  : expectedType === "number"
+                    ? 0
+                    : expectedType === "boolean"
+                      ? false
+                      : expectedType === "null"
+                        ? null
+                        : "";
+              if (
+                expectedType === "number" &&
+                valueConfig?.expectedType !== "number"
+              )
+                setNumberText("0");
+              onChange({
+                fieldPath: config.fieldPath,
+                operator,
+                expectedType,
+                expectedValue,
+              });
+            }
+          }}
+        >
+          {[
+            "exists",
+            "equals",
+            "not_equals",
+            "greater_than",
+            "less_than",
+            "contains",
+          ].map((operator) => (
+            <option key={operator} value={operator}>
+              {operator}
+            </option>
+          ))}
+        </select>
+      </label>
+      {valueConfig && (
+        <>
+          <label>
+            Expected type
+            <select
+              value={valueConfig.expectedType}
+              onChange={(event) => {
+                const expectedType = event.target.value as
+                  | "string"
+                  | "number"
+                  | "boolean"
+                  | "null";
+                if (expectedType === "number") setNumberText("0");
+                onChange({
+                  ...valueConfig,
+                  expectedType,
+                  expectedValue:
+                    expectedType === "number"
+                      ? 0
+                      : expectedType === "boolean"
+                        ? false
+                        : expectedType === "null"
+                          ? null
+                          : "",
+                });
+              }}
+            >
+              {["string", "number", "boolean", "null"].map((type) => (
+                <option key={type} value={type}>
+                  {type}
+                </option>
+              ))}
+            </select>
+          </label>
+          {valueConfig.expectedType === "boolean" ? (
+            <label>
+              Expected value
+              <select
+                value={String(valueConfig.expectedValue)}
+                onChange={(event) =>
+                  onChange({
+                    ...valueConfig,
+                    expectedValue: event.target.value === "true",
+                  })
+                }
+              >
+                <option value="true">true</option>
+                <option value="false">false</option>
+              </select>
+            </label>
+          ) : valueConfig.expectedType === "null" ? (
+            <p>Expected value: null</p>
+          ) : (
+            <label>
+              Expected value
+              <input
+                value={
+                  valueConfig.expectedType === "number"
+                    ? numberText
+                    : String(valueConfig.expectedValue)
+                }
+                aria-invalid={invalid || undefined}
+                onChange={(event) => {
+                  const text = event.target.value;
+                  if (valueConfig.expectedType === "number")
+                    setNumberText(text);
+                  const number = Number(text);
+                  const expectedValue =
+                    valueConfig.expectedType === "number" &&
+                    text.trim() !== "" &&
+                    Number.isFinite(number)
+                      ? number
+                      : text;
+                  onChange({ ...valueConfig, expectedValue });
+                }}
+              />
+            </label>
+          )}
+        </>
+      )}
+      {invalid && (
+        <p role="status">
+          Incomplete or invalid condition configuration. Check the field path,
+          type, and value for the selected operator.
+        </p>
+      )}
+    </fieldset>
+  );
+}
 
 function useMedia(query: string) {
   const [matches, setMatches] = useState(
@@ -218,6 +395,10 @@ export default function WorkflowBuilder({
   const editable =
     persisted && !definition.active && !pending && !locked && !busy;
   const valid = graphValid(draft);
+  const invalidCondition = draft.nodes.find(
+    (node) =>
+      node.type === "condition.v1" && !conditionConfigValid(node.config),
+  );
   useEffect(() => {
     onDirty(
       dirty || locked || pending || !graphValid(draft, true) || !persisted,
@@ -230,7 +411,9 @@ export default function WorkflowBuilder({
         selected: node.id === selected,
         domAttributes: {
           "aria-invalid":
-            nodeIssues.some((issue) => issue.nodeId === node.id) || undefined,
+            node.id === invalidCondition?.id ||
+            nodeIssues.some((issue) => issue.nodeId === node.id) ||
+            undefined,
           "aria-describedby":
             nodeIssues
               .map((issue, index) =>
@@ -239,12 +422,28 @@ export default function WorkflowBuilder({
               .filter(Boolean)
               .join(" ") || undefined,
         },
-        className: `${node.className}${nodeIssues.some((issue) => issue.nodeId === node.id) ? " builder-node--invalid" : ""}`,
+        className: `${node.className}${node.id === invalidCondition?.id || nodeIssues.some((issue) => issue.nodeId === node.id) ? " builder-node--invalid" : ""}`,
       })),
-    [draft, selected, nodeIssues],
+    [draft, selected, nodeIssues, invalidCondition?.id],
   );
   const edges = useMemo(() => flowEdges(draft), [draft]);
   const chosen = draft.nodes.find((n) => n.id === selected);
+  function updateConfig(config: ConditionConfig) {
+    setDraft((graph) => ({
+      ...graph,
+      nodes: graph.nodes.map((node) =>
+        node.id === chosen?.id ? { ...node, config } : node,
+      ),
+    }));
+  }
+  const inspectorConfig = chosen?.type === "condition.v1" && chosen.config && (
+    <ConditionInspector
+      key={chosen.id}
+      config={chosen.config}
+      disabled={!editable}
+      onChange={updateConfig}
+    />
+  );
   function add(kind: GraphNode["kind"]) {
     if (!editable || v2 || draft.nodes.some((n) => n.kind === kind)) return;
     const n: GraphNode =
@@ -437,8 +636,27 @@ export default function WorkflowBuilder({
       )}
       {v2 && !definition.active && (
         <p>
-          Condition workflow topology is fixed. Position changes can be saved.
+          Condition workflow topology is fixed. Configuration and position
+          changes can be saved.
         </p>
+      )}
+      {!v2 && (
+        <button
+          disabled={!editable || !valid}
+          onClick={(event) => {
+            const converted = conditionDraft(draft, definition.active, {
+              fieldPath: "payload",
+              operator: "exists",
+            });
+            setDraft(converted);
+            selectNode(
+              converted.nodes.find((node) => node.kind === "condition")!.id,
+              event.currentTarget,
+            );
+          }}
+        >
+          Convert to condition workflow
+        </button>
       )}
       {!persisted && (
         <p role="alert">
@@ -479,8 +697,9 @@ export default function WorkflowBuilder({
       )}
       {!valid && (
         <p role="status">
-          Complete the directed path before saving: trigger → optional condition
-          → action.
+          {invalidCondition
+            ? "Condition configuration is incomplete or invalid. Check the inspector before saving."
+            : "Complete the directed path before saving: trigger → optional condition → action."}
         </p>
       )}
       {!v2 && draft.nodes.some((n) => n.kind === "condition") && (
@@ -669,7 +888,9 @@ export default function WorkflowBuilder({
               key={n.id}
               id={`node-list-${n.id}`}
               aria-invalid={
-                nodeIssues.some((issue) => issue.nodeId === n.id) || undefined
+                n.id === invalidCondition?.id ||
+                nodeIssues.some((issue) => issue.nodeId === n.id) ||
+                undefined
               }
               aria-describedby={
                 nodeIssues
@@ -744,6 +965,7 @@ export default function WorkflowBuilder({
                 <>
                   <strong>{nodeLabel(chosen)}</strong>
                   <p>{chosen.type}</p>
+                  {inspectorConfig}
                   <p>
                     Label is derived from the fixed type and cannot be edited.
                   </p>
@@ -782,6 +1004,7 @@ export default function WorkflowBuilder({
               <>
                 <strong>{nodeLabel(chosen)}</strong>
                 <p>{chosen.type}</p>
+                {inspectorConfig}
                 <p>
                   Label is derived from the fixed type and cannot be edited.
                 </p>

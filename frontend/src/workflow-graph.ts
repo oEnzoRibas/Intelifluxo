@@ -70,7 +70,7 @@ export function conditionDraft(
   };
   const old = graph.nodes.find((n) => n.kind === "condition");
   const condition = {
-    id: allocate("condition"),
+    id: old?.id ?? allocate("condition"),
     kind: "condition" as const,
     type: "condition.v1" as const,
     position: old ? { ...old.position } : { x: 160, y: 140 },
