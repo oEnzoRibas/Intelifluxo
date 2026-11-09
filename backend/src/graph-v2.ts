@@ -22,6 +22,7 @@ export function validateGraphV2(
   value: unknown,
   trigger: string,
   action: string,
+  shapeOnly = false,
 ): Issue[] {
   if (
     !object(value) ||
@@ -119,7 +120,7 @@ export function validateGraphV2(
       ...(typeof e.sourcePort === "string" ? { sourcePort: e.sourcePort } : {}),
     });
   });
-  if (issues.length) return sort(issues);
+  if (issues.length || shapeOnly) return sort(issues);
   const ids = new Set<string>();
   nodes.forEach((n, i) => {
     if (ids.has(n.id))
