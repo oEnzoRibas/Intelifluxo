@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { automationListRoute } from "./automation-list.js";
 import { isDeepStrictEqual } from "node:util";
 import { validateGraphV2 } from "./graph-v2.js";
 import type { FastifyInstance } from "fastify";
@@ -305,6 +306,7 @@ export function automationRoutes(
   pool: pg.Pool,
   conditionsEnabled = false,
 ) {
+  automationListRoute(app, pool);
   // Graph shape is validated separately to preserve graph-specific error codes.
   const bodySchema = (schema: typeof createSchema | typeof updateSchema) => ({
     ...schema,
