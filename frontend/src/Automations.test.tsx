@@ -335,14 +335,13 @@ describe("automation screens", () => {
     ).toBeDisabled();
     expect(screen.getByRole("button", { name: /Activate/ })).toBeDisabled();
   });
-  it("loads scoped empty list and exposes accessible scope", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response({ items: [] })));
+  it("loads an unscoped empty dashboard", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(response({ items: [], nextCursor: null })),
+    );
     render(<Automations route="#automations" />);
-    fireEvent.change(screen.getByLabelText("Scope"), {
-      target: { value: "tenant" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Load automations" }));
-    expect(await screen.findByText("No automations yet.")).toBeInTheDocument();
+    expect(await screen.findByText("No automations yet")).toBeInTheDocument();
     vi.unstubAllGlobals();
   });
   it("validates creation and sends fixed inactive definition", async () => {
@@ -407,27 +406,22 @@ describe("automation screens", () => {
     ).toBeEnabled();
     vi.unstubAllGlobals();
   });
-  it("keeps the reviewed scope through creation and navigation, including an aborted pending mutation", async () => {
+  it("requests scope during creation and aborts a pending mutation on navigation", async () => {
     const fetcher = vi.fn((url: string, options?: RequestInit) => {
       if (options?.method === "POST") return new Promise<Response>(() => {});
       if (url.includes("executions"))
         return Promise.resolve(response({ items: [] }));
       if (url.includes(id)) return Promise.resolve(response(d));
-      return Promise.resolve(response({ items: [] }));
+      return Promise.resolve(response({ items: [], nextCursor: null }));
     });
     vi.stubGlobal("fetch", fetcher);
     const { rerender } = render(<Automations route="#automations" />);
-    fireEvent.change(screen.getByLabelText("Scope"), {
+    await screen.findByText("No automations yet");
+    rerender(<Automations route="#automations/create" />);
+    expect(screen.getByLabelText("Scope (required)")).toHaveValue("");
+    fireEvent.change(screen.getByLabelText("Scope (required)"), {
       target: { value: "tenant" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Load automations" }));
-    await screen.findByText("No automations yet.");
-    fireEvent.change(screen.getByLabelText("Scope"), {
-      target: { value: "unreviewed" },
-    });
-    fireEvent.click(screen.getByRole("link", { name: "Create Automation" }));
-    rerender(<Automations route="#automations/create" />);
-    expect(screen.getByLabelText("Scope (required)")).toHaveValue("tenant");
     fireEvent.change(screen.getByLabelText("Name (required)"), {
       target: { value: "Receipt" },
     });
@@ -446,9 +440,7 @@ describe("automation screens", () => {
       await screen.findByRole("button", { name: "Activate" }),
     ).toBeEnabled();
     rerender(<Automations route="#automations" />);
-    expect(
-      await screen.findByText("Automations in tenant"),
-    ).toBeInTheDocument();
+    expect(await screen.findByText("No automations yet")).toBeInTheDocument();
     vi.unstubAllGlobals();
   });
   it("reports malformed list response with retry", async () => {
@@ -457,12 +449,8 @@ describe("automation screens", () => {
       vi.fn().mockResolvedValue(response({ items: [{}] })),
     );
     render(<Automations route="#automations" />);
-    fireEvent.change(screen.getByLabelText("Scope"), {
-      target: { value: "tenant" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Load automations" }));
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "unexpected response",
+      "could not return results",
     );
     expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
     vi.unstubAllGlobals();
