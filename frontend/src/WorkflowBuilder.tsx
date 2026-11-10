@@ -20,6 +20,7 @@ import "@fontsource/inter/latin-600.css";
 import "@fontsource/inter/latin-700.css";
 import {
   conditionConfigValid,
+  fieldPathValid,
   edgeIdentity,
   type ConditionConfig,
 } from "./condition-contract";
@@ -92,7 +93,10 @@ function ConditionInspector({
   disabled: boolean;
   onChange: (config: ConditionConfig) => void;
 }) {
-  const invalid = !conditionConfigValid(config);
+  const pathInvalid = !fieldPathValid(config.fieldPath);
+  const valueInvalid =
+    config.operator !== "exists" &&
+    !conditionConfigValid({ ...config, fieldPath: "payload" });
   const valueConfig = config.operator === "exists" ? null : config;
   const [numberText, setNumberText] = useState(() =>
     valueConfig?.expectedType === "number"
@@ -106,12 +110,27 @@ function ConditionInspector({
         Field path
         <input
           value={config.fieldPath}
-          aria-invalid={invalid || undefined}
+          aria-invalid={pathInvalid || undefined}
+          aria-describedby={
+            pathInvalid
+              ? "condition-path-help condition-path-error"
+              : "condition-path-help"
+          }
           onChange={(event) =>
             onChange({ ...config, fieldPath: event.target.value })
           }
         />
       </label>
+      <p id="condition-path-help">
+        Use segmentos separados por ponto, por exemplo payload.total (até 8
+        segmentos).
+      </p>
+      {pathInvalid && (
+        <p id="condition-path-error" role="status">
+          Informe um caminho válido: inicie cada segmento com letra ou
+          sublinhado e use apenas letras, números ou sublinhado.
+        </p>
+      )}
       <label>
         Operator
         <select
@@ -152,15 +171,15 @@ function ConditionInspector({
           }}
         >
           {[
-            "exists",
-            "equals",
-            "not_equals",
-            "greater_than",
-            "less_than",
-            "contains",
-          ].map((operator) => (
+            ["exists", "Existe"],
+            ["equals", "É igual a"],
+            ["not_equals", "É diferente de"],
+            ["greater_than", "É maior que"],
+            ["less_than", "É menor que"],
+            ["contains", "Contém"],
+          ].map(([operator, label]) => (
             <option key={operator} value={operator}>
-              {operator}
+              {label}
             </option>
           ))}
         </select>
@@ -192,13 +211,23 @@ function ConditionInspector({
                 });
               }}
             >
-              {["string", "number", "boolean", "null"].map((type) => (
+              {(config.operator === "greater_than" ||
+              config.operator === "less_than"
+                ? ["number"]
+                : config.operator === "contains"
+                  ? ["string"]
+                  : ["string", "number", "boolean", "null"]
+              ).map((type) => (
                 <option key={type} value={type}>
                   {type}
                 </option>
               ))}
             </select>
           </label>
+          <p>
+            Ao alterar o tipo, o valor é redefinido. Alterar o operador mantém o
+            valor quando o tipo é compatível.
+          </p>
           {valueConfig.expectedType === "boolean" ? (
             <label>
               Expected value
@@ -226,7 +255,12 @@ function ConditionInspector({
                     ? numberText
                     : String(valueConfig.expectedValue)
                 }
-                aria-invalid={invalid || undefined}
+                aria-invalid={valueInvalid || undefined}
+                aria-describedby={
+                  valueInvalid
+                    ? "condition-value-help condition-value-error"
+                    : "condition-value-help"
+                }
                 onChange={(event) => {
                   const text = event.target.value;
                   if (valueConfig.expectedType === "number")
@@ -243,13 +277,22 @@ function ConditionInspector({
               />
             </label>
           )}
+          {(valueConfig.expectedType === "string" ||
+            valueConfig.expectedType === "number") && (
+            <p id="condition-value-help">
+              {valueConfig.expectedType === "number"
+                ? "Informe um número finito."
+                : "Use até 1024 caracteres válidos, sem caractere nulo."}
+            </p>
+          )}
+          {valueInvalid && (
+            <p id="condition-value-error" role="status">
+              {valueConfig.expectedType === "number"
+                ? "Informe um número finito válido."
+                : "Informe um texto válido com até 1024 caracteres e sem caractere nulo."}
+            </p>
+          )}
         </>
-      )}
-      {invalid && (
-        <p role="status">
-          Incomplete or invalid condition configuration. Check the field path,
-          type, and value for the selected operator.
-        </p>
       )}
     </fieldset>
   );
@@ -638,8 +681,8 @@ export default function WorkflowBuilder({
       )}
       {v2 && !definition.active && (
         <p>
-          Condition workflow topology is fixed. Configuration and position
-          changes can be saved.
+          Este fluxo tem uma estrutura fixa: você pode configurar a condição e
+          mover os nós, sem alterar as conexões.
         </p>
       )}
       {!v2 && (
@@ -757,92 +800,96 @@ export default function WorkflowBuilder({
             + Condition (placeholder)
           </button>
           <button disabled>ViaCEP · future</button>
-          <h3>Accessible path controls</h3>
-          {v2 && (
-            <ul aria-label="Workflow connections">
-              {draft.edges.map((edge) => (
-                <li key={edgeIdentity(edge)}>
-                  {nodeLabel(
-                    draft.nodes.find((node) => node.id === edge.source)!,
-                  )}{" "}
-                  {edge.sourcePort ? `— ${edge.sourcePort} →` : "→"}{" "}
-                  {nodeLabel(
-                    draft.nodes.find((node) => node.id === edge.target)!,
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
-          <button
-            disabled={!editable || v2}
-            onClick={() =>
-              setDraft((g) => {
-                const defaults = defaultGraph();
-                const retainedTrigger = g.nodes.find(
-                  (n) => n.kind === "trigger",
-                );
-                const retainedAction = g.nodes.find((n) => n.kind === "action");
-                const used = new Set(
-                  [retainedTrigger, retainedAction]
-                    .filter((n): n is GraphNode => n !== undefined)
-                    .map((n) => n.id),
-                );
-                const rebuild = (node: GraphNode) => {
-                  let id = node.id;
-                  for (let suffix = 1; used.has(id); suffix++)
-                    id = `${node.id}-${suffix}`;
-                  used.add(id);
-                  return { ...node, id };
-                };
-                const trigger = retainedTrigger ?? rebuild(defaults.nodes[0]);
-                const action = retainedAction ?? rebuild(defaults.nodes[1]);
-                return {
-                  ...g,
-                  nodes: [trigger, action],
-                  edges: [{ source: trigger.id, target: action.id }],
-                };
-              })
-            }
-          >
-            Reset to executable path
-          </button>
-          <button
-            disabled={
-              !editable ||
-              v2 ||
-              draft.nodes.length !== 2 ||
-              !draft.nodes.some((n) => n.kind === "trigger") ||
-              !draft.nodes.some((n) => n.kind === "action")
-            }
-            onClick={() => {
-              const t = draft.nodes.find((n) => n.kind === "trigger")!,
-                a = draft.nodes.find((n) => n.kind === "action")!;
-              setDraft((g) => ({
-                ...g,
-                edges: [{ source: t.id, target: a.id }],
-              }));
-            }}
-          >
-            Connect trigger to action
-          </button>
-          <button
-            disabled={!editable || v2 || draft.nodes.length !== 3}
-            onClick={() => {
-              const t = draft.nodes.find((n) => n.kind === "trigger"),
-                c = draft.nodes.find((n) => n.kind === "condition"),
-                a = draft.nodes.find((n) => n.kind === "action");
-              if (t && c && a)
+          <section aria-label="Accessible path controls">
+            <h3>Accessible path controls</h3>
+            {v2 && (
+              <ul aria-label="Workflow connections">
+                {draft.edges.map((edge) => (
+                  <li key={edgeIdentity(edge)}>
+                    {nodeLabel(
+                      draft.nodes.find((node) => node.id === edge.source)!,
+                    )}{" "}
+                    {edge.sourcePort ? `— ${edge.sourcePort} →` : "→"}{" "}
+                    {nodeLabel(
+                      draft.nodes.find((node) => node.id === edge.target)!,
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+            <button
+              disabled={!editable || v2}
+              onClick={() =>
+                setDraft((g) => {
+                  const defaults = defaultGraph();
+                  const retainedTrigger = g.nodes.find(
+                    (n) => n.kind === "trigger",
+                  );
+                  const retainedAction = g.nodes.find(
+                    (n) => n.kind === "action",
+                  );
+                  const used = new Set(
+                    [retainedTrigger, retainedAction]
+                      .filter((n): n is GraphNode => n !== undefined)
+                      .map((n) => n.id),
+                  );
+                  const rebuild = (node: GraphNode) => {
+                    let id = node.id;
+                    for (let suffix = 1; used.has(id); suffix++)
+                      id = `${node.id}-${suffix}`;
+                    used.add(id);
+                    return { ...node, id };
+                  };
+                  const trigger = retainedTrigger ?? rebuild(defaults.nodes[0]);
+                  const action = retainedAction ?? rebuild(defaults.nodes[1]);
+                  return {
+                    ...g,
+                    nodes: [trigger, action],
+                    edges: [{ source: trigger.id, target: action.id }],
+                  };
+                })
+              }
+            >
+              Reset to executable path
+            </button>
+            <button
+              disabled={
+                !editable ||
+                v2 ||
+                draft.nodes.length !== 2 ||
+                !draft.nodes.some((n) => n.kind === "trigger") ||
+                !draft.nodes.some((n) => n.kind === "action")
+              }
+              onClick={() => {
+                const t = draft.nodes.find((n) => n.kind === "trigger")!,
+                  a = draft.nodes.find((n) => n.kind === "action")!;
                 setDraft((g) => ({
                   ...g,
-                  edges: [
-                    { source: t.id, target: c.id },
-                    { source: c.id, target: a.id },
-                  ],
+                  edges: [{ source: t.id, target: a.id }],
                 }));
-            }}
-          >
-            Connect through condition
-          </button>
+              }}
+            >
+              Connect trigger to action
+            </button>
+            <button
+              disabled={!editable || v2 || draft.nodes.length !== 3}
+              onClick={() => {
+                const t = draft.nodes.find((n) => n.kind === "trigger"),
+                  c = draft.nodes.find((n) => n.kind === "condition"),
+                  a = draft.nodes.find((n) => n.kind === "action");
+                if (t && c && a)
+                  setDraft((g) => ({
+                    ...g,
+                    edges: [
+                      { source: t.id, target: c.id },
+                      { source: c.id, target: a.id },
+                    ],
+                  }));
+              }}
+            >
+              Connect through condition
+            </button>
+          </section>
         </aside>
         <div className="builder-workspace">
           <p className="builder-command">

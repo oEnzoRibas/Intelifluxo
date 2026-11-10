@@ -92,6 +92,23 @@ describe("summary contract", () => {
   });
 });
 describe("dashboard", () => {
+  it("applies the visible draft when status changes and resets the cursor", async () => {
+    const fetcher = vi.fn().mockImplementation(() => response(continuation));
+    vi.stubGlobal("fetch", fetcher);
+    render(<AutomationDashboard visible onOpen={() => {}} />);
+    await screen.findAllByText("Receipt");
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
+    await screen.findAllByText("Receipt");
+    fireEvent.change(screen.getByLabelText("Search name or Contexto"), {
+      target: { value: "draft" },
+    });
+    fireEvent.click(screen.getByLabelText("Inactive"));
+    await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(3));
+    expect(String(fetcher.mock.calls[2][0])).toContain("q=draft");
+    expect(String(fetcher.mock.calls[2][0])).toContain("active=false");
+    expect(String(fetcher.mock.calls[2][0])).not.toContain("cursor=");
+  });
   it("discards a late response after changing status", async () => {
     let resolveOld!: (value: Response) => void;
     const fetcher = vi
@@ -131,14 +148,14 @@ describe("dashboard", () => {
     await screen.findAllByText("other");
     expect(
       screen.getAllByRole("link", {
-        name: /Open Builder for Receipt, demo/,
+        name: /Receipt — demo/,
       })[0],
     ).toHaveAttribute("href", `#automations/${id}`);
-    fireEvent.change(screen.getByLabelText("Search name or scope"), {
+    fireEvent.change(screen.getByLabelText("Search name or Contexto"), {
       target: { value: "demo" },
     });
     fireEvent.submit(
-      screen.getByLabelText("Search name or scope").closest("form")!,
+      screen.getByLabelText("Search name or Contexto").closest("form")!,
     );
     await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
     expect(String(fetcher.mock.calls[1][0])).toContain("q=demo");
@@ -166,7 +183,7 @@ describe("dashboard", () => {
     await screen.findByRole("alert");
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     await screen.findByText("No automations yet");
-    const input = screen.getByLabelText("Search name or scope");
+    const input = screen.getByLabelText("Search name or Contexto");
     fireEvent.change(input, { target: { value: "   " } });
     fireEvent.submit(input.closest("form")!);
     expect(input).toHaveFocus();
@@ -185,7 +202,7 @@ describe("dashboard", () => {
       .mockImplementationOnce(() => response({}, 503));
     vi.stubGlobal("fetch", fetcher);
     render(<AutomationDashboard visible onOpen={() => {}} />);
-    const search = screen.getByLabelText("Search name or scope");
+    const search = screen.getByLabelText("Search name or Contexto");
     search.focus();
     await screen.findAllByText("Receipt");
     expect(search).toHaveFocus();
@@ -207,7 +224,7 @@ describe("dashboard", () => {
       vi.fn(() => response({}, 503)),
     );
     render(<AutomationDashboard visible onOpen={() => {}} />);
-    const search = screen.getByLabelText("Search name or scope");
+    const search = screen.getByLabelText("Search name or Contexto");
     search.focus();
     await screen.findByRole("alert");
     expect(search).toHaveFocus();

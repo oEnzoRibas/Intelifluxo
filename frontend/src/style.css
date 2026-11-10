@@ -107,16 +107,23 @@
   color: #bdcadb;
 }
 .dashboard-open {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 8px 12px;
-  border: 1px solid #7197ca;
+  display: inline;
   color: #d5e8ff;
-  text-decoration: none;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.dashboard-badge {
+  display: inline-block;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  padding: 3px 9px;
+  font-size: 12px;
 }
 .dashboard-active {
   color: #a5e8cb;
+}
+.dashboard-inactive {
+  color: #bdcadb;
 }
 .dashboard-pagination {
   display: flex;
@@ -754,6 +761,15 @@ pre {
 }
 .builder .react-flow__node.builder-node--trigger {
   border-radius: 12px;
+}
+.builder .react-flow__node.builder-node--condition {
+  border-color: var(--builder-warning);
+}
+.builder .react-flow__node.builder-node--action {
+  border-color: var(--builder-success);
+}
+.builder .react-flow__node.builder-node--end {
+  border-style: dashed;
 }
 .builder .react-flow__node.builder-node.selected {
   border: 3px solid var(--builder-action);
