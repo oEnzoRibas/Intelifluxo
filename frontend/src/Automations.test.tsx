@@ -144,6 +144,22 @@ describe("automation response contracts", () => {
   });
 });
 describe("automation screens", () => {
+  it("restores focus to the details heading after a successful error reload", async () => {
+    let detailCalls = 0;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => {
+      if (String(url).includes("/executions?")) return response({ items: [] });
+      return ++detailCalls === 1 ? response({}, 503) : response(d);
+    });
+    render(<Automations route={`#automations/${id}`} />);
+    const heading = screen.getByRole("heading", { name: "Automation Details" });
+    expect(heading).not.toHaveFocus();
+    const reload = await screen.findByRole("button", { name: "Reload" });
+    reload.focus();
+    expect(reload).toHaveFocus();
+    fireEvent.click(reload);
+    await screen.findByRole("button", { name: "Activate" });
+    expect(heading).toHaveFocus();
+  });
   it.each([
     [409, "Revision conflict"],
     [503, "may have succeeded"],
