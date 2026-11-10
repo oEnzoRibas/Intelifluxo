@@ -341,6 +341,71 @@ function items<T>(v: unknown, parse: (item: unknown) => T): T[] {
     throw new ApiError("invalid");
   return v.items.map(parse);
 }
+export type AutomationSummary = {
+  id: string;
+  name: string;
+  scope: string;
+  active: boolean;
+  revision: number;
+  schemaVersion: 1 | 2;
+  workflowVersion: 1 | 2;
+};
+export type SummaryPage = {
+  items: AutomationSummary[];
+  nextCursor: string | null;
+};
+const canonicalUuid = (v: unknown): v is string =>
+  typeof v === "string" &&
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$(?![\s\S])/.test(
+    v,
+  );
+export function parseSummaryPage(v: unknown): SummaryPage {
+  if (
+    !object(v) ||
+    !exactKeys(v, ["items", "nextCursor"]) ||
+    !Array.isArray(v.items) ||
+    v.items.length > 100 ||
+    !(v.nextCursor === null || canonicalUuid(v.nextCursor))
+  )
+    throw new ApiError("invalid");
+  for (const item of v.items) {
+    if (
+      !object(item) ||
+      !exactKeys(item, [
+        "id",
+        "name",
+        "scope",
+        "active",
+        "revision",
+        "schemaVersion",
+        "workflowVersion",
+      ]) ||
+      !canonicalUuid(item.id) ||
+      !validText(item.name, 200) ||
+      !validText(item.scope, 128) ||
+      typeof item.active !== "boolean" ||
+      !integerAtLeast(item.revision, 1) ||
+      (item.revision as number) > 2147483647 ||
+      (item.schemaVersion !== 1 && item.schemaVersion !== 2) ||
+      (item.workflowVersion !== 1 && item.workflowVersion !== 2)
+    )
+      throw new ApiError("invalid");
+  }
+  return v as SummaryPage;
+}
+export async function listSummaries(
+  query: { q: string; active: string; cursor: string | null },
+  signal: AbortSignal,
+): Promise<SummaryPage> {
+  const params = new URLSearchParams();
+  if (query.q) params.set("q", query.q);
+  if (query.active !== "all") params.set("active", query.active);
+  if (query.cursor !== null) params.set("cursor", query.cursor);
+  const suffix = params.toString();
+  return parseSummaryPage(
+    await call(`/automations/list${suffix ? `?${suffix}` : ""}`, signal),
+  );
+}
 export async function listDefinitions(scope: string, signal: AbortSignal) {
   const result = items(
     await call(`/automations?scope=${encodeURIComponent(scope)}`, signal),
