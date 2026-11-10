@@ -80,16 +80,20 @@ describe("execution history interactions", () => {
     const items = [
       { ...base, result: receipt },
       v2(1, result),
-      v2(2, {
-        ...result,
-        decision: {
-          ...decision,
-          outcome: "FALSE",
-          sourcePort: "FALSE",
-          targetNodeId: "end",
+      v2(
+        2,
+        {
+          ...result,
+          decision: {
+            ...decision,
+            outcome: "FALSE",
+            sourcePort: "FALSE",
+            targetNodeId: "end",
+          },
+          action: { nodeId: "action", status: "ignored", receipt: null },
         },
-        action: { nodeId: "action", status: "ignored", receipt: null },
-      }),
+        "ignored",
+      ),
       v2(
         3,
         {

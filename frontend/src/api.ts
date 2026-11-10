@@ -1,4 +1,12 @@
 export type Profile = { profile: string; limitations: string[] };
+export type Retry = {
+  generation: number;
+  attempt: number;
+  outcome: "success" | "transient" | "permanent" | "unknown";
+  delayMs: number | null;
+  nextEligibleAt: string | null;
+  reason: null | "permanent" | "unknown" | "exhausted";
+};
 export type EventDetail = {
   id: string;
   scope: string;
@@ -17,14 +25,7 @@ export type EventDetail = {
     | "retry_released"
     | "blocked";
   result: null | { kind: "local-receipt.v1"; eventId: string; message: string };
-  retry: null | {
-    generation: number;
-    attempt: number;
-    outcome: "success" | "transient" | "permanent" | "unknown";
-    delayMs: number | null;
-    nextEligibleAt: string | null;
-    reason: null | "permanent" | "unknown" | "exhausted";
-  };
+  retry: null | Retry;
 };
 export class ApiError extends Error {
   constructor(public kind: "not-found" | "unavailable" | "invalid") {
@@ -42,10 +43,11 @@ const uuid = (v: unknown) =>
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
 const integerAtLeast = (v: unknown, min: number) =>
   typeof v === "number" && Number.isInteger(v) && v >= min;
-const retryValid = (v: unknown): boolean =>
+const retryValid = (v: unknown, scope?: "event"): boolean =>
   v === null ||
   (object(v) &&
     exactKeys(v, [
+      ...(scope ? ["scope"] : []),
       "generation",
       "attempt",
       "outcome",
@@ -53,6 +55,7 @@ const retryValid = (v: unknown): boolean =>
       "nextEligibleAt",
       "reason",
     ]) &&
+    (!scope || v.scope === scope) &&
     integerAtLeast(v.generation, 0) &&
     integerAtLeast(v.attempt, 1) &&
     (v.outcome === "success" ||

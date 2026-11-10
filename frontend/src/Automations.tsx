@@ -60,6 +60,8 @@ export default function Automations({ route }: { route: string }) {
   }, []);
   const scopeInput = useRef<HTMLInputElement>(null);
   const nameInput = useRef<HTMLInputElement>(null);
+  const detailHeading = useRef<HTMLHeadingElement>(null);
+  const focusDetailOnRecovery = useRef(false);
   const historyHeading = useRef<HTMLHeadingElement>(null);
   const id = route.startsWith("#automations/")
     ? route.slice("#automations/".length)
@@ -82,6 +84,7 @@ export default function Automations({ route }: { route: string }) {
     return () => {
       mutation.current?.abort();
       mutation.current = null;
+      focusDetailOnRecovery.current = false;
     };
   }, [route]);
   useEffect(() => {
@@ -112,6 +115,10 @@ export default function Automations({ route }: { route: string }) {
         ) {
           setDetail({ kind: "ready", data });
           setRefreshingDetail(false);
+          if (focusDetailOnRecovery.current) {
+            focusDetailOnRecovery.current = false;
+            detailHeading.current?.focus();
+          }
         }
       })
       .catch((e) => {
@@ -121,6 +128,7 @@ export default function Automations({ route }: { route: string }) {
         ) {
           setDetail({ kind: "error", message: message(e) });
           setRefreshingDetail(false);
+          focusDetailOnRecovery.current = false;
         }
       });
     return () => controller.abort();
@@ -404,7 +412,9 @@ export default function Automations({ route }: { route: string }) {
           <p>
             <a href="#automations">← Automations</a>
           </p>
-          <h1>Automation Details</h1>
+          <h1 ref={detailHeading} tabIndex={-1}>
+            Automation Details
+          </h1>
           {!validId(id) ? (
             <p role="alert">Invalid automation ID.</p>
           ) : detail.kind === "loading" ? (
@@ -412,7 +422,14 @@ export default function Automations({ route }: { route: string }) {
           ) : detail.kind === "error" ? (
             <section className="panel">
               <p role="alert">{detail.message}</p>
-              <button onClick={() => reload()}>Reload</button>
+              <button
+                onClick={() => {
+                  focusDetailOnRecovery.current = true;
+                  reload();
+                }}
+              >
+                Reload
+              </button>
             </section>
           ) : (
             <>

@@ -7,6 +7,7 @@ import {
   object,
   retryValid,
   uuid,
+  type Retry,
 } from "./api";
 import { defaultGraph, graphValid, type WorkflowGraph } from "./workflow-graph";
 import { conditionGraphValid } from "./condition-contract";
@@ -36,10 +37,11 @@ export type Execution = {
   status:
     | "accepted"
     | "completed"
+    | "ignored"
     | "retry_scheduled"
     | "retry_released"
     | "blocked";
-  retry: unknown;
+  retry: null | (Retry & { scope: "event" });
   result: null | Receipt | ConditionResult;
 };
 type Receipt = { kind: "local-receipt.v1"; eventId: string; message: string };
@@ -236,11 +238,12 @@ export function execution(v: unknown): Execution {
     ![
       "accepted",
       "completed",
+      "ignored",
       "retry_scheduled",
       "retry_released",
       "blocked",
     ].includes(String(v.status)) ||
-    !retryValid(v.retry) ||
+    !retryValid(v.retry, "event") ||
     !resultValid(v.schemaVersion, v.eventId, v.result)
   )
     throw new ApiError("invalid");
