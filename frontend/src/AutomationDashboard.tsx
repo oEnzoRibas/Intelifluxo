@@ -47,8 +47,12 @@ export default function AutomationDashboard({
   const heading = useRef<HTMLHeadingElement>(null);
   const input = useRef<HTMLInputElement>(null);
   const sequence = useRef(0);
+  const userInitiated = useRef(false);
   useEffect(() => {
-    if (!visible) return;
+    if (!visible) {
+      userInitiated.current = false;
+      return;
+    }
     const controller = new AbortController();
     const version = ++sequence.current;
     listSummaries(request, controller.signal)
@@ -57,15 +61,20 @@ export default function AutomationDashboard({
         setCommitted(request);
         setResult({ kind: "ready", page });
         if (request.focus) heading.current?.focus();
+        userInitiated.current = false;
       })
       .catch(() => {
-        if (!controller.signal.aborted && version === sequence.current)
+        if (!controller.signal.aborted && version === sequence.current) {
           setResult({ kind: "error" });
+          if (userInitiated.current) heading.current?.focus();
+          userInitiated.current = false;
+        }
       });
     return () => controller.abort();
   }, [request, visible]);
   function load(next: Omit<Request, "serial">) {
     sequence.current++;
+    userInitiated.current = true;
     setResult({ kind: "loading" });
     setRequest((r) => ({ ...next, serial: r.serial + 1 }));
   }
