@@ -369,6 +369,21 @@ export function flowEdges(graph: WorkflowGraph) {
     id: edgeIdentity(e),
     sourceHandle: e.sourcePort,
     label: e.sourcePort,
+    labelStyle: {
+      fill: e.sourcePort === "TRUE" ? "#73c7a1" : "#e6edf6",
+      fontWeight: 700,
+      fontSize: 14,
+    },
+    labelBgStyle: { fill: "#0b1016", fillOpacity: 1 },
+    labelBgPadding: [8, 5] as [number, number],
+    style: {
+      stroke:
+        e.sourcePort === "TRUE"
+          ? "#73c7a1"
+          : e.sourcePort === "FALSE"
+            ? "#b9c8d8"
+            : "#b6d3ff",
+    },
     ariaLabel: `${e.source} to ${e.target}${e.sourcePort ? ` via ${e.sourcePort}` : ""}`,
     markerEnd: { type: MarkerType.ArrowClosed, color: "#b6d3ff" },
     type: "step",
@@ -774,7 +789,11 @@ export default function WorkflowBuilder({
           </button>
           <span className="builder-index">01 / LIBRARY</span>
           <h3>Available nodes</h3>
-          <p>Add a node using the controls below.</p>
+          <p>
+            {v2
+              ? "Fixed topology: existing nodes cannot be added or removed."
+              : "Add a node using the controls below."}
+          </p>
           <button
             disabled={
               !editable || v2 || draft.nodes.some((n) => n.kind === "trigger")
@@ -800,22 +819,27 @@ export default function WorkflowBuilder({
             + Condition (placeholder)
           </button>
           <button disabled>ViaCEP · future</button>
+        </aside>
+        <div className="builder-workspace">
           <section aria-label="Accessible path controls">
             <h3>Accessible path controls</h3>
             {v2 && (
-              <ul aria-label="Workflow connections">
-                {draft.edges.map((edge) => (
-                  <li key={edgeIdentity(edge)}>
-                    {nodeLabel(
-                      draft.nodes.find((node) => node.id === edge.source)!,
-                    )}{" "}
-                    {edge.sourcePort ? `— ${edge.sourcePort} →` : "→"}{" "}
-                    {nodeLabel(
-                      draft.nodes.find((node) => node.id === edge.target)!,
-                    )}
-                  </li>
-                ))}
-              </ul>
+              <section aria-label="Connection summary">
+                <h4>Connection summary</h4>
+                <ul aria-label="Workflow connections">
+                  {draft.edges.map((edge) => (
+                    <li key={edgeIdentity(edge)}>
+                      {nodeLabel(
+                        draft.nodes.find((node) => node.id === edge.source)!,
+                      )}{" "}
+                      {edge.sourcePort ? `— ${edge.sourcePort} →` : "→"}{" "}
+                      {nodeLabel(
+                        draft.nodes.find((node) => node.id === edge.target)!,
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </section>
             )}
             <button
               disabled={!editable || v2}
@@ -890,8 +914,6 @@ export default function WorkflowBuilder({
               Connect through condition
             </button>
           </section>
-        </aside>
-        <div className="builder-workspace">
           <p className="builder-command">
             Canvas · {draft.nodes.length} nodes / {draft.edges.length}{" "}
             connections
@@ -955,7 +977,7 @@ export default function WorkflowBuilder({
             </button>
           ))}
           {v2 && chosen && (
-            <div aria-label="Move selected node without dragging">
+            <div role="group" aria-label="Move selected node without dragging">
               {(
                 [
                   ["left", -20, 0],

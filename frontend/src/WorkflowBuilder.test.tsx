@@ -870,3 +870,83 @@ it("retains placeholder identity and positions while avoiding end ID collisions"
     conditionDraft(graph, false, { fieldPath: "data", operator: "exists" }),
   ).toEqual(converted);
 });
+
+it("maps operator labels to canonical choices and constrains value types and defaults", () => {
+  const graph = conditionDraft(defaultGraph(), false, {
+    fieldPath: "payload",
+    operator: "exists",
+  });
+  render(
+    <WorkflowBuilder
+      definition={{ ...d, schemaVersion: 2, graph }}
+      onDirty={vi.fn()}
+      onSaved={vi.fn()}
+    />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Condition" }));
+  const operator = screen.getByLabelText("Operator");
+  for (const [label, value] of [
+    ["Existe", "exists"],
+    ["É igual a", "equals"],
+    ["É diferente de", "not_equals"],
+    ["É maior que", "greater_than"],
+    ["É menor que", "less_than"],
+    ["Contém", "contains"],
+  ]) {
+    expect(within(operator).getByRole("option", { name: label })).toHaveValue(
+      value,
+    );
+  }
+  expect(screen.queryByLabelText("Expected type")).not.toBeInTheDocument();
+  for (const [value, types, initial] of [
+    ["equals", ["string", "number", "boolean", "null"], ""],
+    ["greater_than", ["number"], "0"],
+    ["less_than", ["number"], "0"],
+    ["contains", ["string"], ""],
+    ["not_equals", ["string", "number", "boolean", "null"], ""],
+  ] as const) {
+    fireEvent.change(operator, { target: { value } });
+    expect(
+      within(screen.getByLabelText("Expected type"))
+        .getAllByRole("option")
+        .map((option) => (option as HTMLOptionElement).value),
+    ).toEqual(types);
+    expect(screen.getByLabelText("Expected value")).toHaveValue(initial);
+  }
+});
+
+it("associates each invalid condition input only with its own help and error", () => {
+  const graph = conditionDraft(defaultGraph(), false, {
+    fieldPath: "payload",
+    operator: "exists",
+  });
+  render(
+    <WorkflowBuilder
+      definition={{ ...d, schemaVersion: 2, graph }}
+      onDirty={vi.fn()}
+      onSaved={vi.fn()}
+    />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Condition" }));
+  fireEvent.change(screen.getByLabelText("Operator"), {
+    target: { value: "greater_than" },
+  });
+  const path = screen.getByLabelText("Field path");
+  const value = screen.getByLabelText("Expected value");
+  fireEvent.change(path, { target: { value: "bad..path" } });
+  fireEvent.change(value, { target: { value: "-" } });
+  expect(path).toHaveAttribute("aria-invalid", "true");
+  expect(value).toHaveAttribute("aria-invalid", "true");
+  expect(path).toHaveAttribute(
+    "aria-describedby",
+    "condition-path-help condition-path-error",
+  );
+  expect(value).toHaveAttribute(
+    "aria-describedby",
+    "condition-value-help condition-value-error",
+  );
+  expect(value).toHaveValue("-");
+  fireEvent.change(path, { target: { value: "payload.x" } });
+  expect(path).not.toHaveAttribute("aria-invalid");
+  expect(value).toHaveAttribute("aria-invalid", "true");
+});
