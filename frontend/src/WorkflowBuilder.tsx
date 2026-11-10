@@ -122,13 +122,15 @@ function ConditionInspector({
         />
       </label>
       <p id="condition-path-help">
-        Use segmentos separados por ponto, por exemplo payload.total (até 8
-        segmentos).
+        Use segmentos separados por ponto, por exemplo payload.total: até 256
+        caracteres no total, 8 segmentos e 64 caracteres por segmento. Cada
+        segmento deve iniciar com letra ASCII ou sublinhado e conter apenas
+        letras ASCII, números ou sublinhado. Não use os segmentos reservados
+        __proto__, prototype ou constructor.
       </p>
       {pathInvalid && (
         <p id="condition-path-error" role="status">
-          Informe um caminho válido: inicie cada segmento com letra ou
-          sublinhado e use apenas letras, números ou sublinhado.
+          Caminho inválido. Corrija-o conforme as regras acima.
         </p>
       )}
       <label>

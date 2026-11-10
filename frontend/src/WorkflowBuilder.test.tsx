@@ -950,3 +950,42 @@ it("associates each invalid condition input only with its own help and error", (
   expect(path).not.toHaveAttribute("aria-invalid");
   expect(value).toHaveAttribute("aria-invalid", "true");
 });
+
+it("provides complete field path guidance for every rejected constraint", () => {
+  const graph = conditionDraft(defaultGraph(), false, {
+    fieldPath: "payload",
+    operator: "exists",
+  });
+  render(
+    <WorkflowBuilder
+      definition={{ ...d, schemaVersion: 2, graph }}
+      onDirty={vi.fn()}
+      onSaved={vi.fn()}
+    />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Condition" }));
+  const path = screen.getByLabelText("Field path");
+  for (const invalid of [
+    "payload.__proto__",
+    "a".repeat(65),
+    Array(9).fill("a").join("."),
+    [64, 64, 64, 62].map((n) => "a".repeat(n)).join("."),
+    "bad..path",
+  ]) {
+    fireEvent.change(path, { target: { value: invalid } });
+    expect(path).toHaveValue(invalid);
+    expect(path).toHaveAttribute("aria-invalid", "true");
+    expect(path).toHaveAttribute(
+      "aria-describedby",
+      "condition-path-help condition-path-error",
+    );
+    expect(path).toHaveAccessibleDescription(
+      /256 caracteres.*8 segmentos.*64 caracteres.*__proto__, prototype ou constructor/i,
+    );
+  }
+  const boundary = [64, 64, 64, 61].map((n) => "a".repeat(n)).join(".");
+  fireEvent.change(path, { target: { value: boundary } });
+  expect(path).toHaveValue(boundary);
+  expect(path).not.toHaveAttribute("aria-invalid");
+  expect(path).toHaveAttribute("aria-describedby", "condition-path-help");
+});

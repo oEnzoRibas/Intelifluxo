@@ -107,7 +107,9 @@
   color: #bdcadb;
 }
 .dashboard-open {
-  display: inline;
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
   color: #d5e8ff;
   text-decoration: underline;
   text-underline-offset: 3px;
