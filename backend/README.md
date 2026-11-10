@@ -157,3 +157,13 @@ Migration 006 adds a nullable column and installs the graph check `NOT VALID`; n
 Before applying, inventory long transactions and concurrent maintenance, schedule a suitable window, and choose `lock_timeout` and `statement_timeout` for the environment (for example via PostgreSQL `PGOPTIONS` on the migration process); no production timeout is prescribed here. A timeout aborts the current migration query: check constraint validation state in `pg_constraint.convalidated` and retry after resolving blockers. Validation scans the revisions table and can consume I/O; assess table size and monitor locks and load. Earlier migrations are also replayed by this runner and need their own rollout assessment.
 
 SQL NULL graph is intentionally accepted for legacy revisions and compatibility with old writers. It is materialized as the default graph on read, not backfilled. Before relying on graph persistence, fence all old API/writer instances and any direct database writers through the deployment/access-control process; otherwise they can still insert NULL graphs and silently lose graph intent. The migration itself does not enforce fencing or prevent future NULL writes. There is no graph-specific metrics/tracing abstraction in this backend; graph validation/rollout telemetry remains a gap.
+
+### Condition definition write gate
+
+`CONDITIONS_WRITES_ENABLED` is strictly `true` or `false` and defaults to `false`.
+With the gate off, v2 definitions remain readable and may be deactivated with
+an unchanged full graph; v2 creation, predicate changes, and activation are
+rejected. Set it to `true` only after all writers and workers have been fenced
+and verified as described in ADR 0003. This API gate does not establish worker
+support or deployment readiness. V2 writes require the complete graph and a
+matching `schemaVersion: 2`; rejected writes do not create revisions.

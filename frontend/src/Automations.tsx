@@ -9,6 +9,7 @@ import {
 import { ApiError, validId } from "./api";
 import {
   ConflictError,
+  ValidationError,
   createDefinition,
   getDefinition,
   listDefinitions,
@@ -59,6 +60,9 @@ export default function Automations({ route }: { route: string }) {
   }, []);
   const scopeInput = useRef<HTMLInputElement>(null);
   const nameInput = useRef<HTMLInputElement>(null);
+  const detailHeading = useRef<HTMLHeadingElement>(null);
+  const focusDetailOnRecovery = useRef(false);
+  const historyHeading = useRef<HTMLHeadingElement>(null);
   const id = route.startsWith("#automations/")
     ? route.slice("#automations/".length)
     : "";
@@ -80,6 +84,7 @@ export default function Automations({ route }: { route: string }) {
     return () => {
       mutation.current?.abort();
       mutation.current = null;
+      focusDetailOnRecovery.current = false;
     };
   }, [route]);
   useEffect(() => {
@@ -110,6 +115,10 @@ export default function Automations({ route }: { route: string }) {
         ) {
           setDetail({ kind: "ready", data });
           setRefreshingDetail(false);
+          if (focusDetailOnRecovery.current) {
+            focusDetailOnRecovery.current = false;
+            detailHeading.current?.focus();
+          }
         }
       })
       .catch((e) => {
@@ -119,6 +128,7 @@ export default function Automations({ route }: { route: string }) {
         ) {
           setDetail({ kind: "error", message: message(e) });
           setRefreshingDetail(false);
+          focusDetailOnRecovery.current = false;
         }
       });
     return () => controller.abort();
@@ -215,12 +225,14 @@ export default function Automations({ route }: { route: string }) {
       if (!controller.signal.aborted) {
         if (err instanceof ConflictError) {
           setMutationError(
-            "This revision is stale. Reload the latest definition before trying again.",
+            "Revision conflict: this revision is stale. Reload the latest definition before trying again.",
           );
-          setDetail({
-            kind: "error",
-            message: "Revision conflict: the definition changed.",
-          });
+        } else if (err instanceof ValidationError) {
+          setMutationError(
+            err.issues.some((issue) => issue.code === "conditions_disabled")
+              ? "Condition writes are disabled (CONDITIONS_WRITES_ENABLED). The update was rejected."
+              : "The service rejected this update. Reload before trying again.",
+          );
         } else
           setMutationError(
             `${message(err)} The update may have succeeded; reload before retrying.`,
@@ -400,7 +412,9 @@ export default function Automations({ route }: { route: string }) {
           <p>
             <a href="#automations">← Automations</a>
           </p>
-          <h1>Automation Details</h1>
+          <h1 ref={detailHeading} tabIndex={-1}>
+            Automation Details
+          </h1>
           {!validId(id) ? (
             <p role="alert">Invalid automation ID.</p>
           ) : detail.kind === "loading" ? (
@@ -408,7 +422,14 @@ export default function Automations({ route }: { route: string }) {
           ) : detail.kind === "error" ? (
             <section className="panel">
               <p role="alert">{detail.message}</p>
-              <button onClick={() => reload()}>Reload</button>
+              <button
+                onClick={() => {
+                  focusDetailOnRecovery.current = true;
+                  reload();
+                }}
+              >
+                Reload
+              </button>
             </section>
           ) : (
             <>
@@ -428,11 +449,7 @@ export default function Automations({ route }: { route: string }) {
                   Action: record-receipt.v1
                 </p>
                 <button
-                  disabled={
-                    pending ||
-                    !!mutationError ||
-                    (!detail.data.active && builderBlocked)
-                  }
+                  disabled={pending || !!mutationError || builderBlocked}
                   onClick={() => toggle(detail.data)}
                 >
                   {pending
@@ -445,6 +462,7 @@ export default function Automations({ route }: { route: string }) {
                   <>
                     <p role="alert">{mutationError}</p>
                     <button
+                      disabled={builderBlocked}
                       onClick={() => {
                         setMutationError("");
                         reload();
@@ -459,14 +477,16 @@ export default function Automations({ route }: { route: string }) {
                 key={`${detail.data.id}-${detail.data.revision}`}
                 definition={detail.data}
                 onDirty={reportBuilderState}
-                busy={pending}
+                busy={pending || !!mutationError}
                 onSaved={(updated) => {
                   detailReadVersion.current++;
                   setDetail({ kind: "ready", data: updated });
                 }}
               />
               <section className="panel" aria-live="polite">
-                <h2>Execution history</h2>
+                <h2 ref={historyHeading} tabIndex={-1}>
+                  Execution history
+                </h2>
                 {history.kind === "loading" ? (
                   <p>Loading history…</p>
                 ) : history.kind === "error" ? (
@@ -475,6 +495,7 @@ export default function Automations({ route }: { route: string }) {
                     <button
                       disabled={pending}
                       onClick={() => {
+                        historyHeading.current?.focus();
                         setHistory({ kind: "loading" });
                         setHistoryRefresh((x) => x + 1);
                       }}
@@ -513,7 +534,57 @@ export default function Automations({ route }: { route: string }) {
                               <td data-label="Revision">{x.revision}</td>
                               <td data-label="Created · UTC">{x.createdAt}</td>
                               <td data-label="Result">
-                                {x.result ? (
+                                {x.result?.kind === "condition-execution.v1" ? (
+                                  <div
+                                    className={`execution-result execution-result--${x.result.action.status}`}
+                                  >
+                                    <strong>
+                                      {x.result.decision
+                                        ? `Decision ${x.result.decision.outcome} → ${x.result.decision.targetNodeId}`
+                                        : "Decision unavailable"}
+                                    </strong>
+                                    <div>
+                                      Action:{" "}
+                                      {x.result.action.status.replaceAll(
+                                        "_",
+                                        " ",
+                                      )}
+                                      {x.result.action.nodeId
+                                        ? ` · ${x.result.action.nodeId}`
+                                        : ""}
+                                    </div>
+                                    {x.result.failure && (
+                                      <div>
+                                        Failure:{" "}
+                                        {x.result.failure.classification} ·{" "}
+                                        {x.result.failure.code}
+                                      </div>
+                                    )}
+                                    {(x.status === "retry_scheduled" ||
+                                      x.status === "retry_released") && (
+                                      <div>
+                                        Retry (event-level):{" "}
+                                        {x.status.replaceAll("_", " ")}
+                                      </div>
+                                    )}
+                                    <details>
+                                      <summary>Execution details</summary>
+                                      <p>Pinned revision: {x.revision}</p>
+                                      {x.result.decision && (
+                                        <p>
+                                          Condition node:{" "}
+                                          {x.result.decision.nodeId}
+                                        </p>
+                                      )}
+                                      {x.result.failure?.nodeId && (
+                                        <p>
+                                          Failure node:{" "}
+                                          {x.result.failure.nodeId}
+                                        </p>
+                                      )}
+                                    </details>
+                                  </div>
+                                ) : x.result ? (
                                   <pre>{JSON.stringify(x.result, null, 2)}</pre>
                                 ) : (
                                   "Not available"

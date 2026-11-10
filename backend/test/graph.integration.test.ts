@@ -207,7 +207,7 @@ describe.skipIf(process.env.INTEGRATION !== "1")("persistent graph", () => {
     const unsupported = await post({
       ...input,
       scope: "demo",
-      graph: { version: 2, nodes: null, edges: null },
+      graph: { version: 3, nodes: null, edges: null },
     });
     expect(unsupported.json().issues[0].code).toBe("unsupported_graph_version");
     expect(

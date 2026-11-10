@@ -1,0 +1,4 @@
+-- Separate transaction: validation takes a weaker lock than constraint installation.
+ALTER TABLE automation_definition_revisions VALIDATE CONSTRAINT automation_graph_valid_v2;
+ALTER TABLE automation_executions VALIDATE CONSTRAINT automation_execution_result_valid_v2;
+ALTER TABLE automation_executions VALIDATE CONSTRAINT automation_execution_types_valid_v2;

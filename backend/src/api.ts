@@ -2,14 +2,20 @@ import Fastify, { type FastifyError } from "fastify";
 import type pg from "pg";
 import { automationRoutes } from "./automations.js";
 import { accept } from "./accept.js";
-import { requestSchema, type Input } from "./contract.js";
+import { requestSchema, validEventData, type Input } from "./contract.js";
 import { executionRoutes } from "./executions.js";
-import { automationSnapshotsEnabled } from "./config.js";
+import {
+  automationSnapshotsEnabled,
+  conditionsWritesEnabled,
+} from "./config.js";
 
 export function api(
   pool: pg.Pool,
   snapshotsEnabled = automationSnapshotsEnabled(
     process.env.AUTOMATION_SNAPSHOTS_ENABLED,
+  ),
+  conditionsEnabled = conditionsWritesEnabled(
+    process.env.CONDITIONS_WRITES_ENABLED,
   ),
 ) {
   const app = Fastify({
@@ -30,7 +36,7 @@ export function api(
       }
       return reply.send(error);
     });
-    automationRoutes(automations, pool);
+    automationRoutes(automations, pool, conditionsEnabled);
   });
   executionRoutes(app, pool);
   app.get("/status", async () => ({
@@ -48,6 +54,11 @@ export function api(
     "/events",
     { schema: { body: requestSchema } },
     async (request, reply) => {
+      if (
+        Object.hasOwn(request.body, "data") &&
+        !validEventData(request.body.data)
+      )
+        return reply.code(400).send({ error: "invalid_data" });
       const result = await accept(pool, request.body, snapshotsEnabled);
       if (result.conflict)
         return reply.code(409).send({ error: "idempotency_conflict" });
