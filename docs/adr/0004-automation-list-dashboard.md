@@ -1,6 +1,6 @@
 # ADR 0004: Bounded automation summary listing
 
-- Status: **Proposed for Lead approval**; Stage 1 architecture only, not implementation or deployment approval
+- Status: **Accepted**; Stage 1 architecture only, not implementation or deployment approval
 - Date: 2026-11-09
 - Scope: Read-only automation list dashboard contract
 - Predecessor: [ADR 0003](0003-conditions-and-decisions.md)
