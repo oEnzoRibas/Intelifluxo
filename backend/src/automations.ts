@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
+import { validateGraphV2 } from "./graph-v2.js";
 import type { FastifyInstance } from "fastify";
 import type pg from "pg";
 import { transaction } from "./db.js";
@@ -32,7 +34,7 @@ const fixed = (value: string) => ({
 });
 const fields = {
   name,
-  schemaVersion: { const: 1 },
+  schemaVersion: { enum: [1, 2] },
   trigger: fixed("receipt.v1"),
   action: fixed("record-receipt.v1"),
 };
@@ -102,11 +104,64 @@ const graphSchema = {
     },
   },
 };
+// Validation is performed by the graph validators; this schema also controls
+// Fastify response serialization, so v2 config and ports must be declared.
+const graphV2Schema = {
+  type: "object",
+  additionalProperties: false,
+  required: ["version", "nodes", "edges"],
+  properties: {
+    version: { const: 2 },
+    nodes: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["id", "kind", "type", "position"],
+        properties: {
+          id: { type: "string" },
+          kind: { type: "string" },
+          type: { type: "string" },
+          position: {
+            type: "object",
+            additionalProperties: false,
+            required: ["x", "y"],
+            properties: { x: { type: "number" }, y: { type: "number" } },
+          },
+          config: {
+            type: "object",
+            additionalProperties: true,
+            properties: {
+              fieldPath: { type: "string" },
+              operator: { type: "string" },
+              expectedType: { type: "string" },
+              expectedValue: {},
+            },
+          },
+        },
+      },
+    },
+    edges: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["source", "target"],
+        properties: {
+          source: { type: "string" },
+          target: { type: "string" },
+          sourcePort: { enum: ["TRUE", "FALSE"] },
+        },
+      },
+    },
+  },
+};
+const graphUnionSchema = { anyOf: [graphSchema, graphV2Schema] };
 export const createSchema = {
   type: "object",
   additionalProperties: false,
   required: ["scope", ...Object.keys(fields)],
-  properties: { scope, ...fields, graph: graphSchema },
+  properties: { scope, ...fields, graph: graphUnionSchema },
 };
 export const updateSchema = {
   type: "object",
@@ -116,7 +171,7 @@ export const updateSchema = {
     expectedRevision: { type: "integer", minimum: 1, maximum: 2147483646 },
     active: { type: "boolean" },
     ...fields,
-    graph: graphSchema,
+    graph: graphUnionSchema,
   },
 };
 export const params = {
@@ -162,15 +217,37 @@ export const response = {
     trigger: fixed("receipt.v1"),
     action: fixed("record-receipt.v1"),
     createdAt: { type: "string" },
-    graph: graphSchema,
+    graph: graphUnionSchema,
   },
 };
+type DefinitionGraph =
+  Graph | { version: 2; nodes: unknown[]; edges: unknown[] };
+const versionOf = (graph: unknown): unknown =>
+  graph && typeof graph === "object"
+    ? (graph as { version?: unknown }).version
+    : undefined;
+function shape(graph: unknown, trigger: string, action: string) {
+  return versionOf(graph) === 2
+    ? validateGraphV2(graph, trigger, action, true)
+    : graphShape(graph);
+}
+function semantics(
+  graph: DefinitionGraph,
+  active: boolean,
+  trigger: string,
+  action: string,
+) {
+  return graph.version === 2
+    ? validateGraphV2(graph, trigger, action)
+    : graphSemantics(graph, active, trigger, action);
+}
+const issue = (code: string, path = "/graph") => [{ code, path }];
 type Input = {
   name: string;
-  schemaVersion: 1;
+  schemaVersion: 1 | 2;
   trigger: { type: "receipt.v1" };
   action: { type: "record-receipt.v1" };
-  graph?: Graph;
+  graph?: DefinitionGraph;
 };
 type Create = Input & { scope: string };
 type Update = Input & { expectedRevision: number; active: boolean };
@@ -184,7 +261,7 @@ type Row = {
   trigger_type: string;
   action_type: string;
   created_at: Date;
-  graph: Graph | null;
+  graph: DefinitionGraph | null;
 };
 const select = `SELECT d.id,d.scope,r.revision,r.name,r.active,r.schema_version,r.trigger_type,r.action_type,r.created_at,r.graph FROM automation_definitions d JOIN automation_definition_revisions r ON r.automation_id=d.id AND r.revision=d.current_revision`;
 function output(row: Row) {
@@ -207,7 +284,7 @@ async function insertRevision(
   revision: number,
   input: Input,
   active: boolean,
-  graph: Graph,
+  graph: DefinitionGraph,
 ) {
   await client.query(
     `INSERT INTO automation_definition_revisions (automation_id,revision,name,active,schema_version,trigger_type,action_type,graph) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
@@ -223,7 +300,11 @@ async function insertRevision(
     ],
   );
 }
-export function automationRoutes(app: FastifyInstance, pool: pg.Pool) {
+export function automationRoutes(
+  app: FastifyInstance,
+  pool: pg.Pool,
+  conditionsEnabled = false,
+) {
   // Graph shape is validated separately to preserve graph-specific error codes.
   const bodySchema = (schema: typeof createSchema | typeof updateSchema) => ({
     ...schema,
@@ -233,12 +314,21 @@ export function automationRoutes(app: FastifyInstance, pool: pg.Pool) {
     "/automations",
     { schema: { body: bodySchema(createSchema), response: { 201: response } } },
     async (request, reply) => {
+      if (request.body.schemaVersion === 2 && request.body.graph === undefined)
+        return reply.code(400).send({
+          error: "validation_failed",
+          issues: issue("graph_required"),
+        });
       const graph =
         request.body.graph === undefined ? defaultGraph() : request.body.graph;
-      const issues = graphShape(graph);
+      const issues = shape(
+        graph,
+        request.body.trigger.type,
+        request.body.action.type,
+      );
       if (issues.length)
         return reply.code(400).send({ error: "validation_failed", issues });
-      const semantic = graphSemantics(
+      const semantic = semantics(
         graph,
         false,
         request.body.trigger.type,
@@ -248,6 +338,16 @@ export function automationRoutes(app: FastifyInstance, pool: pg.Pool) {
         return reply
           .code(400)
           .send({ error: "validation_failed", issues: semantic });
+      if (graph.version !== request.body.schemaVersion)
+        return reply.code(400).send({
+          error: "validation_failed",
+          issues: issue("execution_schema_mismatch"),
+        });
+      if (graph.version === 2 && !conditionsEnabled)
+        return reply.code(400).send({
+          error: "validation_failed",
+          issues: issue("conditions_disabled"),
+        });
       const id = randomUUID();
       const row = await transaction(pool, async (client) => {
         await client.query(
@@ -305,7 +405,11 @@ export function automationRoutes(app: FastifyInstance, pool: pg.Pool) {
     },
     async (request, reply) => {
       if (request.body.graph !== undefined) {
-        const issues = graphShape(request.body.graph);
+        const issues = shape(
+          request.body.graph,
+          request.body.trigger.type,
+          request.body.action.type,
+        );
         if (issues.length)
           return reply.code(400).send({ error: "validation_failed", issues });
       }
@@ -320,15 +424,37 @@ export function automationRoutes(app: FastifyInstance, pool: pg.Pool) {
         const existing = await client.query<Row>(`${select} WHERE d.id=$1`, [
           request.params.id,
         ]);
+        if (
+          request.body.graph === undefined &&
+          (request.body.schemaVersion === 2 ||
+            existing.rows[0].schema_version === 2)
+        )
+          return { issues: issue("graph_required") };
         const graph =
           request.body.graph ?? existing.rows[0].graph ?? defaultGraph();
-        const issues = graphSemantics(
+        const issues = semantics(
           graph,
           request.body.active,
           request.body.trigger.type,
           request.body.action.type,
         );
         if (issues.length) return { issues };
+        if (graph.version !== request.body.schemaVersion)
+          return { issues: issue("execution_schema_mismatch") };
+        if (
+          existing.rows[0].schema_version === 2 &&
+          graph.version === 1 &&
+          request.body.active
+        )
+          return { issues: issue("execution_schema_mismatch") };
+        if (
+          !conditionsEnabled &&
+          (graph.version === 2 || existing.rows[0].schema_version === 2) &&
+          (request.body.active ||
+            !isDeepStrictEqual(graph, existing.rows[0].graph) ||
+            graph.version !== existing.rows[0].schema_version)
+        )
+          return { issues: issue("conditions_disabled") };
         const next = request.body.expectedRevision + 1;
         await insertRevision(
           client,

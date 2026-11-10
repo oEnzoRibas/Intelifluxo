@@ -7,8 +7,9 @@ import {
 } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import WorkflowBuilder, { flowEdges, flowNodes } from "./WorkflowBuilder";
-import { defaultGraph } from "./workflow-graph";
-import type { Definition } from "./automation-api";
+import { conditionDraft, defaultGraph } from "./workflow-graph";
+import { definition, type Definition } from "./automation-api";
+import { edgeIdentity } from "./condition-contract";
 
 const d: Definition = {
   id: "11111111-1111-1111-1111-111111111111",
@@ -23,6 +24,119 @@ const d: Definition = {
   graph: defaultGraph(),
   graphSource: "server",
 };
+it("hydrates a persisted condition graph into the builder without changing its topology", () => {
+  const graph = conditionDraft(defaultGraph(), false, {
+    fieldPath: "data.value",
+    operator: "exists",
+  });
+  const { graphSource: _graphSource, ...raw } = d;
+  expect(_graphSource).toBe("server");
+  const loaded = definition({
+    ...raw,
+    schemaVersion: 2,
+    graph,
+  });
+  const onDirty = vi.fn();
+  const { container } = render(
+    <WorkflowBuilder definition={loaded} onDirty={onDirty} onSaved={vi.fn()} />,
+  );
+  expect(screen.getByRole("button", { name: "Condition" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "End" })).toBeInTheDocument();
+  expect(
+    screen.queryByText(/workflow preview is read-only/i),
+  ).not.toBeInTheDocument();
+  expect(onDirty).toHaveBeenLastCalledWith(false);
+  expect(
+    container.querySelector('[data-nodeid="condition"][data-handleid="TRUE"]'),
+  ).toHaveAttribute("aria-label", "TRUE output");
+  expect(
+    container.querySelector('[data-nodeid="condition"][data-handleid="FALSE"]'),
+  ).toHaveAttribute("aria-label", "FALSE output");
+  expect(
+    within(screen.getByLabelText("Workflow connections")).getByText(
+      /Condition — TRUE → Record Receipt Action/,
+    ),
+  ).toBeInTheDocument();
+  expect(
+    within(screen.getByLabelText("Workflow connections")).getByText(
+      /Condition — FALSE → End/,
+    ),
+  ).toBeInTheDocument();
+  expect(flowEdges(graph).map((edge) => edge.id)).toEqual(
+    graph.edges.map(edgeIdentity),
+  );
+  expect(flowEdges(graph)[1]).toMatchObject({
+    sourceHandle: "TRUE",
+    label: "TRUE",
+    target: "action",
+  });
+  expect(flowEdges(graph)[2]).toMatchObject({
+    sourceHandle: "FALSE",
+    label: "FALSE",
+    target: "end",
+  });
+  expect(
+    flowNodes(graph).map(({ id, position }) => ({ id, position })),
+  ).toEqual(graph.nodes.map(({ id, position }) => ({ id, position })));
+  expect(
+    screen.getByRole("button", { name: "Reset to executable path" }),
+  ).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Save workflow" })).toBeDisabled();
+});
+it("saves a non-drag v2 position edit and reopens the saved topology", async () => {
+  const graph = conditionDraft(defaultGraph(), false, {
+    fieldPath: "data.value",
+    operator: "exists",
+  });
+  const loaded: Definition = { ...d, schemaVersion: 2, graph };
+  const onSaved = vi.fn();
+  const fetchMock = vi
+    .spyOn(globalThis, "fetch")
+    .mockImplementation(async (_url, init) => {
+      const body = JSON.parse(String(init?.body));
+      return new Response(
+        JSON.stringify({
+          ...loaded,
+          graphSource: undefined,
+          graph: body.graph,
+          revision: 2,
+        }),
+      );
+    });
+  const view = render(
+    <WorkflowBuilder definition={loaded} onDirty={vi.fn()} onSaved={onSaved} />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Condition" }));
+  fireEvent.click(screen.getByRole("button", { name: "Move right" }));
+  fireEvent.click(screen.getByRole("button", { name: "Save workflow" }));
+  await waitFor(() => expect(onSaved).toHaveBeenCalled());
+  const body = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
+  expect(body.expectedRevision).toBe(1);
+  expect(body.schemaVersion).toBe(2);
+  expect(body.graph.edges).toEqual(graph.edges);
+  expect(
+    body.graph.nodes.find(
+      (node: { kind: string }) => node.kind === "condition",
+    ),
+  ).toMatchObject({
+    id: graph.nodes[1].id,
+    position: { x: graph.nodes[1].position.x + 20 },
+    config: { fieldPath: "data.value", operator: "exists" },
+  });
+  view.unmount();
+  render(
+    <WorkflowBuilder
+      definition={onSaved.mock.calls[0][0]}
+      onDirty={vi.fn()}
+      onSaved={vi.fn()}
+    />,
+  );
+  expect(screen.getByRole("button", { name: "Save workflow" })).toBeDisabled();
+  expect(screen.getByLabelText("Workflow connections")).toHaveTextContent(
+    "FALSE",
+  );
+  fetchMock.mockRestore();
+});
 it("restores focus after inspector dismissal and falls back after removal", () => {
   render(
     <WorkflowBuilder definition={d} onDirty={vi.fn()} onSaved={vi.fn()} />,
@@ -625,4 +739,134 @@ it("opens and dismisses the tablet library and restores focus", () => {
   expect(open).toHaveAttribute("aria-expanded", "false");
   expect(open).toHaveFocus();
   media.mockRestore();
+});
+
+it("converts, edits typed condition values, saves and reopens", async () => {
+  Object.defineProperty(window, "matchMedia", {
+    configurable: true,
+    value: undefined,
+  });
+  const onSaved = vi.fn();
+  const fetchMock = vi
+    .spyOn(globalThis, "fetch")
+    .mockImplementation(async (_url, init) => {
+      const body = JSON.parse(String(init?.body));
+      return new Response(
+        JSON.stringify({
+          ...d,
+          graphSource: undefined,
+          schemaVersion: 2,
+          graph: body.graph,
+          revision: 2,
+        }),
+      );
+    });
+  const view = render(
+    <WorkflowBuilder definition={d} onDirty={vi.fn()} onSaved={onSaved} />,
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: "Convert to condition workflow" }),
+  );
+  expect(screen.getByLabelText("Field path")).toHaveValue("payload");
+  fireEvent.change(screen.getByLabelText("Field path"), {
+    target: { value: "" },
+  });
+  expect(screen.getByRole("button", { name: "Condition" })).toHaveAttribute(
+    "aria-invalid",
+    "true",
+  );
+  expect(screen.getByRole("button", { name: "Save workflow" })).toBeDisabled();
+  fireEvent.change(screen.getByLabelText("Field path"), {
+    target: { value: "data.total" },
+  });
+  for (const operator of [
+    "equals",
+    "not_equals",
+    "greater_than",
+    "less_than",
+    "contains",
+    "exists",
+  ]) {
+    fireEvent.change(screen.getByLabelText("Operator"), {
+      target: { value: operator },
+    });
+    expect(screen.getByLabelText("Operator")).toHaveValue(operator);
+  }
+  fireEvent.change(screen.getByLabelText("Operator"), {
+    target: { value: "equals" },
+  });
+  for (const type of ["boolean", "null", "string", "number"]) {
+    fireEvent.change(screen.getByLabelText("Expected type"), {
+      target: { value: type },
+    });
+    expect(screen.getByLabelText("Expected type")).toHaveValue(type);
+  }
+  fireEvent.change(screen.getByLabelText("Expected value"), {
+    target: { value: "" },
+  });
+  expect(screen.getByRole("button", { name: "Save workflow" })).toBeDisabled();
+  fireEvent.change(screen.getByLabelText("Expected value"), {
+    target: { value: "42.5" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Save workflow" }));
+  await waitFor(() => expect(onSaved).toHaveBeenCalled());
+  const body = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
+  expect(body.expectedRevision).toBe(1);
+  expect(
+    body.graph.nodes.find((node: { kind: string }) => node.kind === "condition")
+      .config,
+  ).toEqual({
+    fieldPath: "data.total",
+    operator: "equals",
+    expectedType: "number",
+    expectedValue: 42.5,
+  });
+  view.unmount();
+  render(
+    <WorkflowBuilder
+      definition={onSaved.mock.calls[0][0]}
+      onDirty={vi.fn()}
+      onSaved={vi.fn()}
+    />,
+  );
+  const button = screen.getByRole("button", { name: "Condition" });
+  fireEvent.click(button);
+  expect(screen.getByLabelText("Expected value")).toHaveValue("42.5");
+  fireEvent.change(screen.getByLabelText("Operator"), {
+    target: { value: "exists" },
+  });
+  expect(screen.queryByLabelText("Expected value")).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Close" }));
+  expect(button).toHaveFocus();
+  fetchMock.mockRestore();
+});
+
+it("retains placeholder identity and positions while avoiding end ID collisions", () => {
+  const graph = defaultGraph();
+  graph.nodes[0].id = "end";
+  graph.nodes[1].id = "condition";
+  graph.nodes.push({
+    id: "custom-condition",
+    kind: "condition",
+    type: "condition-placeholder.v1",
+    position: { x: 12, y: 34 },
+  });
+  graph.edges = [
+    { source: "end", target: "custom-condition" },
+    { source: "custom-condition", target: "condition" },
+  ];
+  const converted = conditionDraft(graph, false, {
+    fieldPath: "data",
+    operator: "exists",
+  });
+  expect(converted.nodes.map((node) => node.id)).toEqual([
+    "end",
+    "custom-condition",
+    "condition",
+    "end-1",
+  ]);
+  expect(converted.nodes[1].position).toEqual({ x: 12, y: 34 });
+  expect(
+    conditionDraft(graph, false, { fieldPath: "data", operator: "exists" }),
+  ).toEqual(converted);
 });

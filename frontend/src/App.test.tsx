@@ -44,6 +44,31 @@ afterEach(() => {
   vi.unstubAllGlobals();
   window.history.replaceState(null, "", window.location.pathname);
 });
+it.each([{}, { valor: 150, nested: { active: true }, empty: null }])(
+  "preserves optional event data in the event detail",
+  async (data) => {
+    const event = { ...detail, content: { ...detail.content, data } };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => reply(event)),
+    );
+    await expect(getEvent(id, new AbortController().signal)).resolves.toEqual(
+      event,
+    );
+  },
+);
+it.each([null, [], "value", 1])(
+  "rejects non-object event data",
+  async (data) => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => reply({ ...detail, content: { ...detail.content, data } })),
+    );
+    await expect(
+      getEvent(id, new AbortController().signal),
+    ).rejects.toMatchObject({ kind: "invalid" });
+  },
+);
 it.each([
   "2026-01-01t00:00:00z",
   "2026-01-01T12:34:56.123+05:30",

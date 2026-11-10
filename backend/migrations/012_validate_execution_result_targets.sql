@@ -1,0 +1,1 @@
+ALTER TABLE automation_executions VALIDATE CONSTRAINT automation_execution_target_valid_v2;

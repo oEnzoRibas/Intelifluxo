@@ -19,6 +19,11 @@ import "@fontsource/inter/latin-400.css";
 import "@fontsource/inter/latin-600.css";
 import "@fontsource/inter/latin-700.css";
 import {
+  conditionConfigValid,
+  edgeIdentity,
+  type ConditionConfig,
+} from "./condition-contract";
+import {
   ConflictError,
   ValidationError,
   getDefinition,
@@ -28,13 +33,18 @@ import {
 } from "./automation-api";
 import {
   defaultGraph,
+  conditionDraft,
   graphValid,
   type GraphNode,
   type WorkflowGraph,
 } from "./workflow-graph";
 
 type BuilderNode = Node<
-  { label: React.ReactNode; kind: GraphNode["kind"] },
+  {
+    label: React.ReactNode;
+    kind: GraphNode["kind"];
+    version: WorkflowGraph["version"];
+  },
   "builder"
 >;
 
@@ -47,13 +57,203 @@ function CanvasNode({ data }: NodeProps<BuilderNode>) {
         <Handle type="target" position={Position.Top} style={style} />
       )}
       {data.label}
-      {data.kind !== "action" && (
+      {data.kind === "condition" && data.version === 2 ? (
+        <>
+          <Handle
+            id="TRUE"
+            type="source"
+            position={Position.Bottom}
+            style={{ ...style, left: "30%" }}
+            aria-label="TRUE output"
+          />
+          <Handle
+            id="FALSE"
+            type="source"
+            position={Position.Bottom}
+            style={{ ...style, left: "70%" }}
+            aria-label="FALSE output"
+          />
+        </>
+      ) : data.kind !== "end" &&
+        (data.kind !== "action" || data.version === 2) ? (
         <Handle type="source" position={Position.Bottom} style={style} />
-      )}
+      ) : null}
     </div>
   );
 }
 const nodeTypes = { builder: CanvasNode };
+
+function ConditionInspector({
+  config,
+  disabled,
+  onChange,
+}: {
+  config: ConditionConfig;
+  disabled: boolean;
+  onChange: (config: ConditionConfig) => void;
+}) {
+  const invalid = !conditionConfigValid(config);
+  const valueConfig = config.operator === "exists" ? null : config;
+  const [numberText, setNumberText] = useState(() =>
+    valueConfig?.expectedType === "number"
+      ? String(valueConfig.expectedValue)
+      : "0",
+  );
+  return (
+    <fieldset disabled={disabled}>
+      <legend>Condition configuration</legend>
+      <label>
+        Field path
+        <input
+          value={config.fieldPath}
+          aria-invalid={invalid || undefined}
+          onChange={(event) =>
+            onChange({ ...config, fieldPath: event.target.value })
+          }
+        />
+      </label>
+      <label>
+        Operator
+        <select
+          value={config.operator}
+          onChange={(event) => {
+            const operator = event.target.value as ConditionConfig["operator"];
+            if (operator === "exists")
+              onChange({ fieldPath: config.fieldPath, operator });
+            else {
+              const expectedType =
+                operator === "greater_than" || operator === "less_than"
+                  ? "number"
+                  : operator === "contains"
+                    ? "string"
+                    : (valueConfig?.expectedType ?? "string");
+              const expectedValue =
+                expectedType === valueConfig?.expectedType
+                  ? valueConfig.expectedValue
+                  : expectedType === "number"
+                    ? 0
+                    : expectedType === "boolean"
+                      ? false
+                      : expectedType === "null"
+                        ? null
+                        : "";
+              if (
+                expectedType === "number" &&
+                valueConfig?.expectedType !== "number"
+              )
+                setNumberText("0");
+              onChange({
+                fieldPath: config.fieldPath,
+                operator,
+                expectedType,
+                expectedValue,
+              });
+            }
+          }}
+        >
+          {[
+            "exists",
+            "equals",
+            "not_equals",
+            "greater_than",
+            "less_than",
+            "contains",
+          ].map((operator) => (
+            <option key={operator} value={operator}>
+              {operator}
+            </option>
+          ))}
+        </select>
+      </label>
+      {valueConfig && (
+        <>
+          <label>
+            Expected type
+            <select
+              value={valueConfig.expectedType}
+              onChange={(event) => {
+                const expectedType = event.target.value as
+                  | "string"
+                  | "number"
+                  | "boolean"
+                  | "null";
+                if (expectedType === "number") setNumberText("0");
+                onChange({
+                  ...valueConfig,
+                  expectedType,
+                  expectedValue:
+                    expectedType === "number"
+                      ? 0
+                      : expectedType === "boolean"
+                        ? false
+                        : expectedType === "null"
+                          ? null
+                          : "",
+                });
+              }}
+            >
+              {["string", "number", "boolean", "null"].map((type) => (
+                <option key={type} value={type}>
+                  {type}
+                </option>
+              ))}
+            </select>
+          </label>
+          {valueConfig.expectedType === "boolean" ? (
+            <label>
+              Expected value
+              <select
+                value={String(valueConfig.expectedValue)}
+                onChange={(event) =>
+                  onChange({
+                    ...valueConfig,
+                    expectedValue: event.target.value === "true",
+                  })
+                }
+              >
+                <option value="true">true</option>
+                <option value="false">false</option>
+              </select>
+            </label>
+          ) : valueConfig.expectedType === "null" ? (
+            <p>Expected value: null</p>
+          ) : (
+            <label>
+              Expected value
+              <input
+                value={
+                  valueConfig.expectedType === "number"
+                    ? numberText
+                    : String(valueConfig.expectedValue)
+                }
+                aria-invalid={invalid || undefined}
+                onChange={(event) => {
+                  const text = event.target.value;
+                  if (valueConfig.expectedType === "number")
+                    setNumberText(text);
+                  const number = Number(text);
+                  const expectedValue =
+                    valueConfig.expectedType === "number" &&
+                    text.trim() !== "" &&
+                    Number.isFinite(number)
+                      ? number
+                      : text;
+                  onChange({ ...valueConfig, expectedValue });
+                }}
+              />
+            </label>
+          )}
+        </>
+      )}
+      {invalid && (
+        <p role="status">
+          Incomplete or invalid condition configuration. Check the field path,
+          type, and value for the selected operator.
+        </p>
+      )}
+    </fieldset>
+  );
+}
 
 function useMedia(query: string) {
   const [matches, setMatches] = useState(
@@ -75,13 +275,18 @@ export const nodeLabel = (node: GraphNode) =>
     ? "Receipt Trigger"
     : node.kind === "action"
       ? "Record Receipt Action"
-      : "Condition · not executable";
+      : node.kind === "end"
+        ? "End"
+        : node.type === "condition.v1"
+          ? "Condition"
+          : "Condition · not executable";
 export function flowNodes(graph: WorkflowGraph) {
   return graph.nodes.map((n) => ({
     id: n.id,
     position: n.position,
     data: {
       kind: n.kind,
+      version: graph.version,
       label: (
         <>
           <span className="builder-node-type">
@@ -89,7 +294,11 @@ export function flowNodes(graph: WorkflowGraph) {
               ? "01 / TRIGGER"
               : n.kind === "action"
                 ? "02 / ACTION"
-                : "◇ / PLANNED"}
+                : n.kind === "end"
+                  ? "04 / END"
+                  : graph.version === 2
+                    ? "02 / CONDITION"
+                    : "◇ / PLANNED"}
           </span>
           <span className="builder-node-name">{nodeLabel(n)}</span>
           <span className="builder-node-id">{n.type}</span>
@@ -98,7 +307,11 @@ export function flowNodes(graph: WorkflowGraph) {
               ? "OUTPUT / RECEIPT"
               : n.kind === "action"
                 ? "INPUT / RECEIPT"
-                : "Blocks activation"}
+                : n.kind === "end"
+                  ? "INPUT"
+                  : graph.version === 2
+                    ? "TRUE / FALSE"
+                    : "Blocks activation"}
           </span>
         </>
       ),
@@ -110,7 +323,10 @@ export function flowNodes(graph: WorkflowGraph) {
 export function flowEdges(graph: WorkflowGraph) {
   return graph.edges.map((e) => ({
     ...e,
-    id: `${e.source}->${e.target}`,
+    id: edgeIdentity(e),
+    sourceHandle: e.sourcePort,
+    label: e.sourcePort,
+    ariaLabel: `${e.source} to ${e.target}${e.sourcePort ? ` via ${e.sourcePort}` : ""}`,
     markerEnd: { type: MarkerType.ArrowClosed, color: "#b6d3ff" },
     type: "step",
   }));
@@ -174,22 +390,20 @@ export default function WorkflowBuilder({
   const serializedDraft = JSON.stringify(draft);
   useEffect(() => setNodeIssues([]), [serializedDraft]);
   const dirty = serializedDraft !== JSON.stringify(baseline.graph);
+  const persisted = baseline.graphSource !== "legacy-default";
+  const v2 = draft.version === 2;
   const editable =
-    baseline.graphSource === "server" &&
-    !definition.active &&
-    !pending &&
-    !locked &&
-    !busy;
+    persisted && !definition.active && !pending && !locked && !busy;
   const valid = graphValid(draft);
+  const invalidCondition = draft.nodes.find(
+    (node) =>
+      node.type === "condition.v1" && !conditionConfigValid(node.config),
+  );
   useEffect(() => {
     onDirty(
-      dirty ||
-        locked ||
-        pending ||
-        !graphValid(draft, true) ||
-        baseline.graphSource !== "server",
+      dirty || locked || pending || !graphValid(draft, true) || !persisted,
     );
-  }, [dirty, locked, pending, draft, baseline.graphSource, onDirty]);
+  }, [dirty, locked, pending, draft, persisted, onDirty]);
   const nodes = useMemo(
     () =>
       flowNodes(draft).map((node) => ({
@@ -197,7 +411,9 @@ export default function WorkflowBuilder({
         selected: node.id === selected,
         domAttributes: {
           "aria-invalid":
-            nodeIssues.some((issue) => issue.nodeId === node.id) || undefined,
+            node.id === invalidCondition?.id ||
+            nodeIssues.some((issue) => issue.nodeId === node.id) ||
+            undefined,
           "aria-describedby":
             nodeIssues
               .map((issue, index) =>
@@ -206,14 +422,30 @@ export default function WorkflowBuilder({
               .filter(Boolean)
               .join(" ") || undefined,
         },
-        className: `${node.className}${nodeIssues.some((issue) => issue.nodeId === node.id) ? " builder-node--invalid" : ""}`,
+        className: `${node.className}${node.id === invalidCondition?.id || nodeIssues.some((issue) => issue.nodeId === node.id) ? " builder-node--invalid" : ""}`,
       })),
-    [draft, selected, nodeIssues],
+    [draft, selected, nodeIssues, invalidCondition?.id],
   );
   const edges = useMemo(() => flowEdges(draft), [draft]);
   const chosen = draft.nodes.find((n) => n.id === selected);
+  function updateConfig(config: ConditionConfig) {
+    setDraft((graph) => ({
+      ...graph,
+      nodes: graph.nodes.map((node) =>
+        node.id === chosen?.id ? { ...node, config } : node,
+      ),
+    }));
+  }
+  const inspectorConfig = chosen?.type === "condition.v1" && chosen.config && (
+    <ConditionInspector
+      key={chosen.id}
+      config={chosen.config}
+      disabled={!editable}
+      onChange={updateConfig}
+    />
+  );
   function add(kind: GraphNode["kind"]) {
-    if (!editable || draft.nodes.some((n) => n.kind === kind)) return;
+    if (!editable || v2 || draft.nodes.some((n) => n.kind === kind)) return;
     const n: GraphNode =
       kind === "trigger"
         ? { id: "trigger", kind, type: "receipt.v1", position: { x: 0, y: 0 } }
@@ -233,7 +465,7 @@ export default function WorkflowBuilder({
     setDraft((g) => ({ ...g, nodes: [...g.nodes, n] }));
   }
   function connect(c: Connection) {
-    if (!editable || !c.source || !c.target) return;
+    if (!editable || v2 || !c.source || !c.target) return;
     const source = draft.nodes.find((n) => n.id === c.source),
       target = draft.nodes.find((n) => n.id === c.target);
     if (
@@ -282,14 +514,14 @@ export default function WorkflowBuilder({
     });
   }
   function edgeChanges(changes: EdgeChange[]) {
-    if (!editable) return;
+    if (!editable || v2) return;
     const removed = new Set(
       changes.filter((c) => c.type === "remove").map((c) => c.id),
     );
     if (removed.size)
       setDraft((g) => ({
         ...g,
-        edges: g.edges.filter((e) => !removed.has(`${e.source}->${e.target}`)),
+        edges: g.edges.filter((e) => !removed.has(edgeIdentity(e))),
       }));
   }
   async function save() {
@@ -327,6 +559,8 @@ export default function WorkflowBuilder({
           invalid_topology: "Invalid workflow path",
           projection_mismatch: "Workflow does not match the automation",
           non_executable_graph: "Workflow is not executable",
+          conditions_disabled:
+            "Condition writes are disabled (CONDITIONS_WRITES_ENABLED)",
         };
         setProblem(
           `Server rejected the workflow: ${err.issues.map((issue) => labels[issue.code] ?? "Invalid workflow").join("; ")}. Your draft is preserved.`,
@@ -384,13 +618,13 @@ export default function WorkflowBuilder({
           <h2>Visual Workflow Builder</h2>
           <p
             role="status"
-            className={`builder-status ${dirty || pending || baseline.graphSource !== "server" ? "builder-status--dirty" : "builder-status--saved"}`}
+            className={`builder-status ${dirty || pending || !persisted ? "builder-status--dirty" : "builder-status--saved"}`}
           >
             {pending
               ? "Saving or loading…"
               : dirty
                 ? "Unsaved changes"
-                : baseline.graphSource === "server"
+                : persisted
                   ? `Saved · revision ${baseline.revision}`
                   : "Preview · not persisted"}
           </p>
@@ -402,7 +636,31 @@ export default function WorkflowBuilder({
       {definition.active && (
         <p>Deactivate this automation before editing its workflow.</p>
       )}
-      {baseline.graphSource !== "server" && (
+      {v2 && !definition.active && (
+        <p>
+          Condition workflow topology is fixed. Configuration and position
+          changes can be saved.
+        </p>
+      )}
+      {!v2 && (
+        <button
+          disabled={!editable || !valid}
+          onClick={(event) => {
+            const converted = conditionDraft(draft, definition.active, {
+              fieldPath: "payload",
+              operator: "exists",
+            });
+            setDraft(converted);
+            selectNode(
+              converted.nodes.find((node) => node.kind === "condition")!.id,
+              event.currentTarget,
+            );
+          }}
+        >
+          Convert to condition workflow
+        </button>
+      )}
+      {!persisted && (
         <p role="alert">
           This server does not support graph persistence. The workflow preview
           is read-only; upgrade the server to edit, save, or activate it.
@@ -441,11 +699,12 @@ export default function WorkflowBuilder({
       )}
       {!valid && (
         <p role="status">
-          Complete the directed path before saving: trigger → optional condition
-          → action.
+          {invalidCondition
+            ? "Condition configuration is incomplete or invalid. Check the inspector before saving."
+            : "Complete the directed path before saving: trigger → optional condition → action."}
         </p>
       )}
-      {draft.nodes.some((n) => n.kind === "condition") && (
+      {!v2 && draft.nodes.some((n) => n.kind === "condition") && (
         <p>Condition is a placeholder and blocks activation.</p>
       )}
       <div className="builder-layout">
@@ -475,21 +734,23 @@ export default function WorkflowBuilder({
           <p>Add a node using the controls below.</p>
           <button
             disabled={
-              !editable || draft.nodes.some((n) => n.kind === "trigger")
+              !editable || v2 || draft.nodes.some((n) => n.kind === "trigger")
             }
             onClick={() => add("trigger")}
           >
             + Receipt Trigger
           </button>
           <button
-            disabled={!editable || draft.nodes.some((n) => n.kind === "action")}
+            disabled={
+              !editable || v2 || draft.nodes.some((n) => n.kind === "action")
+            }
             onClick={() => add("action")}
           >
             + Record Receipt Action
           </button>
           <button
             disabled={
-              !editable || draft.nodes.some((n) => n.kind === "condition")
+              !editable || v2 || draft.nodes.some((n) => n.kind === "condition")
             }
             onClick={() => add("condition")}
           >
@@ -497,8 +758,23 @@ export default function WorkflowBuilder({
           </button>
           <button disabled>ViaCEP · future</button>
           <h3>Accessible path controls</h3>
+          {v2 && (
+            <ul aria-label="Workflow connections">
+              {draft.edges.map((edge) => (
+                <li key={edgeIdentity(edge)}>
+                  {nodeLabel(
+                    draft.nodes.find((node) => node.id === edge.source)!,
+                  )}{" "}
+                  {edge.sourcePort ? `— ${edge.sourcePort} →` : "→"}{" "}
+                  {nodeLabel(
+                    draft.nodes.find((node) => node.id === edge.target)!,
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
           <button
-            disabled={!editable}
+            disabled={!editable || v2}
             onClick={() =>
               setDraft((g) => {
                 const defaults = defaultGraph();
@@ -533,6 +809,7 @@ export default function WorkflowBuilder({
           <button
             disabled={
               !editable ||
+              v2 ||
               draft.nodes.length !== 2 ||
               !draft.nodes.some((n) => n.kind === "trigger") ||
               !draft.nodes.some((n) => n.kind === "action")
@@ -549,7 +826,7 @@ export default function WorkflowBuilder({
             Connect trigger to action
           </button>
           <button
-            disabled={!editable || draft.nodes.length !== 3}
+            disabled={!editable || v2 || draft.nodes.length !== 3}
             onClick={() => {
               const t = draft.nodes.find((n) => n.kind === "trigger"),
                 c = draft.nodes.find((n) => n.kind === "condition"),
@@ -584,7 +861,7 @@ export default function WorkflowBuilder({
                 selectNode(node.id, event.currentTarget as HTMLElement)
               }
               nodesDraggable={editable}
-              nodesConnectable={editable}
+              nodesConnectable={editable && !v2}
               edgesFocusable
               fitView
             >
@@ -613,7 +890,9 @@ export default function WorkflowBuilder({
               key={n.id}
               id={`node-list-${n.id}`}
               aria-invalid={
-                nodeIssues.some((issue) => issue.nodeId === n.id) || undefined
+                n.id === invalidCondition?.id ||
+                nodeIssues.some((issue) => issue.nodeId === n.id) ||
+                undefined
               }
               aria-describedby={
                 nodeIssues
@@ -628,6 +907,47 @@ export default function WorkflowBuilder({
               {nodeLabel(n)}
             </button>
           ))}
+          {v2 && chosen && (
+            <div aria-label="Move selected node without dragging">
+              {(
+                [
+                  ["left", -20, 0],
+                  ["right", 20, 0],
+                  ["up", 0, -20],
+                  ["down", 0, 20],
+                ] as const
+              ).map(([direction, x, y]) => (
+                <button
+                  key={direction}
+                  disabled={!editable}
+                  onClick={() =>
+                    setDraft((g) => ({
+                      ...g,
+                      nodes: g.nodes.map((node) =>
+                        node.id === chosen.id
+                          ? {
+                              ...node,
+                              position: {
+                                x: Math.max(
+                                  -10000,
+                                  Math.min(10000, node.position.x + x),
+                                ),
+                                y: Math.max(
+                                  -10000,
+                                  Math.min(10000, node.position.y + y),
+                                ),
+                              },
+                            }
+                          : node,
+                      ),
+                    }))
+                  }
+                >
+                  Move {direction}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
         {mobile ? (
           chosen && (
@@ -647,6 +967,7 @@ export default function WorkflowBuilder({
                 <>
                   <strong>{nodeLabel(chosen)}</strong>
                   <p>{chosen.type}</p>
+                  {inspectorConfig}
                   <p>
                     Label is derived from the fixed type and cannot be edited.
                   </p>
@@ -656,7 +977,7 @@ export default function WorkflowBuilder({
                   </p>
                   <button onClick={closeInspector}>Close</button>
                   <button
-                    disabled={!editable}
+                    disabled={!editable || v2}
                     onClick={() => {
                       setDraft((g) => ({
                         ...g,
@@ -685,6 +1006,7 @@ export default function WorkflowBuilder({
               <>
                 <strong>{nodeLabel(chosen)}</strong>
                 <p>{chosen.type}</p>
+                {inspectorConfig}
                 <p>
                   Label is derived from the fixed type and cannot be edited.
                 </p>
@@ -694,7 +1016,7 @@ export default function WorkflowBuilder({
                 </p>
                 <button onClick={closeInspector}>Close</button>
                 <button
-                  disabled={!editable}
+                  disabled={!editable || v2}
                   onClick={() => {
                     setDraft((g) => ({
                       ...g,

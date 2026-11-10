@@ -50,6 +50,9 @@
             },
             "message": {
               "type": "string"
+            },
+            "data": {
+              "type": "object"
             }
           }
         },
