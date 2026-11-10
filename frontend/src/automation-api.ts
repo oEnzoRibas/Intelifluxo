@@ -391,6 +391,11 @@ export function parseSummaryPage(v: unknown): SummaryPage {
     )
       throw new ApiError("invalid");
   }
+  if (
+    v.nextCursor !== null &&
+    (v.items.length === 0 || v.items[v.items.length - 1].id !== v.nextCursor)
+  )
+    throw new ApiError("invalid");
   return v as SummaryPage;
 }
 export async function listSummaries(

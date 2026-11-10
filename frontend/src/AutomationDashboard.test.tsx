@@ -47,6 +47,15 @@ describe("summary contract", () => {
     ])
       expect(() => parseSummaryPage(value)).toThrow();
   });
+  it("requires a continuation cursor to equal the final returned id", () => {
+    const lastId = "00000000-0000-0000-0000-000000000002";
+    expect(() => parseSummaryPage({ items: [], nextCursor: id })).toThrow();
+    expect(() =>
+      parseSummaryPage({ items: [item], nextCursor: lastId }),
+    ).toThrow();
+    const page = { items: [item, { ...item, id: lastId }], nextCursor: lastId };
+    expect(parseSummaryPage(page)).toEqual(page);
+  });
 });
 describe("dashboard", () => {
   it("discards a late response after changing status", async () => {
@@ -86,7 +95,7 @@ describe("dashboard", () => {
               scope: "other",
             },
           ],
-          nextCursor: id,
+          nextCursor: "00000000-0000-0000-0000-000000000002",
         }),
       )
       .mockImplementationOnce(() => response({ items: [item], nextCursor: id }))
@@ -145,5 +154,40 @@ describe("dashboard", () => {
         "No automations yet",
       ),
     ).toBeInTheDocument();
+  });
+  it("focuses results after failed Next and Retry without stealing initial focus", async () => {
+    const fetcher = vi
+      .fn()
+      .mockImplementationOnce(() => response({ items: [item], nextCursor: id }))
+      .mockImplementationOnce(() => response({}, 503))
+      .mockImplementationOnce(() => response({}, 503));
+    vi.stubGlobal("fetch", fetcher);
+    render(<AutomationDashboard visible onOpen={() => {}} />);
+    const search = screen.getByLabelText("Search name or scope");
+    search.focus();
+    await screen.findAllByText("Receipt");
+    expect(search).toHaveFocus();
+    const next = screen.getByRole("button", { name: "Next" });
+    next.focus();
+    fireEvent.click(next);
+    await screen.findByRole("alert");
+    const heading = screen.getByRole("heading", { name: "Current results" });
+    expect(heading).toHaveFocus();
+    const retry = screen.getByRole("button", { name: "Retry" });
+    retry.focus();
+    fireEvent.click(retry);
+    await screen.findByRole("alert");
+    expect(heading).toHaveFocus();
+  });
+  it("does not move focus on initial load failure", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => response({}, 503)),
+    );
+    render(<AutomationDashboard visible onOpen={() => {}} />);
+    const search = screen.getByLabelText("Search name or scope");
+    search.focus();
+    await screen.findByRole("alert");
+    expect(search).toHaveFocus();
   });
 });
