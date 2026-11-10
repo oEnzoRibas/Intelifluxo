@@ -7,7 +7,7 @@ import {
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import AutomationDashboard from "./AutomationDashboard";
-import { parseSummaryPage } from "./automation-api";
+import { listSummaries, parseSummaryPage } from "./automation-api";
 
 const id = "00000000-0000-0000-0000-000000000001";
 const item = {
@@ -18,6 +18,15 @@ const item = {
   revision: 2,
   schemaVersion: 1,
   workflowVersion: 2,
+};
+const fullItems = Array.from({ length: 25 }, (_, index) => ({
+  ...item,
+  id: `00000000-0000-0000-0000-${String(index + 1).padStart(12, "0")}`,
+  scope: index === 1 ? "other" : "demo",
+}));
+const continuation = {
+  items: fullItems,
+  nextCursor: fullItems[fullItems.length - 1].id,
 };
 const response = (value: unknown, status = 200) =>
   Promise.resolve(
@@ -43,18 +52,43 @@ describe("summary contract", () => {
       { items: [{ ...item, workflowVersion: 3 }], nextCursor: null },
       { items: [{ ...item, revision: 2147483648 }], nextCursor: null },
       { items: [{ ...item, extra: 1 }], nextCursor: null },
-      { items: Array(101).fill(item), nextCursor: null },
+      { items: [...fullItems, item], nextCursor: null },
     ])
       expect(() => parseSummaryPage(value)).toThrow();
   });
   it("requires a continuation cursor to equal the final returned id", () => {
-    const lastId = "00000000-0000-0000-0000-000000000002";
     expect(() => parseSummaryPage({ items: [], nextCursor: id })).toThrow();
+    expect(() => parseSummaryPage({ items: [item], nextCursor: id })).toThrow();
     expect(() =>
-      parseSummaryPage({ items: [item], nextCursor: lastId }),
+      parseSummaryPage({ ...continuation, nextCursor: id }),
     ).toThrow();
-    const page = { items: [item, { ...item, id: lastId }], nextCursor: lastId };
-    expect(parseSummaryPage(page)).toEqual(page);
+    expect(parseSummaryPage(continuation)).toEqual(continuation);
+    const terminal = { items: fullItems, nextCursor: null };
+    expect(parseSummaryPage(terminal)).toEqual(terminal);
+    expect(parseSummaryPage({ items: [item], nextCursor: id }, 1)).toEqual({
+      items: [item],
+      nextCursor: id,
+    });
+    expect(() =>
+      parseSummaryPage({ items: [item, item], nextCursor: null }, 1),
+    ).toThrow();
+  });
+  it("uses the default backend limit in listSummaries", async () => {
+    const fetcher = vi
+      .fn()
+      .mockImplementationOnce(() => response(continuation))
+      .mockImplementationOnce(() =>
+        response({ items: [item], nextCursor: id }),
+      );
+    vi.stubGlobal("fetch", fetcher);
+    const query = { q: "", active: "all", cursor: null };
+    await expect(
+      listSummaries(query, new AbortController().signal),
+    ).resolves.toEqual(continuation);
+    expect(String(fetcher.mock.calls[0][0])).not.toContain("limit=");
+    await expect(
+      listSummaries(query, new AbortController().signal),
+    ).rejects.toThrow();
   });
 });
 describe("dashboard", () => {
@@ -85,21 +119,9 @@ describe("dashboard", () => {
   it("searches, filters and traverses live pages including an empty continuation", async () => {
     const fetcher = vi
       .fn()
-      .mockImplementationOnce(() =>
-        response({
-          items: [
-            item,
-            {
-              ...item,
-              id: "00000000-0000-0000-0000-000000000002",
-              scope: "other",
-            },
-          ],
-          nextCursor: "00000000-0000-0000-0000-000000000002",
-        }),
-      )
-      .mockImplementationOnce(() => response({ items: [item], nextCursor: id }))
-      .mockImplementationOnce(() => response({ items: [item], nextCursor: id }))
+      .mockImplementationOnce(() => response(continuation))
+      .mockImplementationOnce(() => response(continuation))
+      .mockImplementationOnce(() => response(continuation))
       .mockImplementationOnce(() => response({ items: [], nextCursor: null }))
       .mockImplementationOnce(() =>
         response({ items: [item], nextCursor: null }),
@@ -158,7 +180,7 @@ describe("dashboard", () => {
   it("focuses results after failed Next and Retry without stealing initial focus", async () => {
     const fetcher = vi
       .fn()
-      .mockImplementationOnce(() => response({ items: [item], nextCursor: id }))
+      .mockImplementationOnce(() => response(continuation))
       .mockImplementationOnce(() => response({}, 503))
       .mockImplementationOnce(() => response({}, 503));
     vi.stubGlobal("fetch", fetcher);

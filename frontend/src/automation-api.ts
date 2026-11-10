@@ -359,12 +359,19 @@ const canonicalUuid = (v: unknown): v is string =>
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$(?![\s\S])/.test(
     v,
   );
-export function parseSummaryPage(v: unknown): SummaryPage {
+const SUMMARY_DEFAULT_LIMIT = 25;
+export function parseSummaryPage(
+  v: unknown,
+  expectedLimit = SUMMARY_DEFAULT_LIMIT,
+): SummaryPage {
   if (
+    !Number.isInteger(expectedLimit) ||
+    expectedLimit < 1 ||
+    expectedLimit > 100 ||
     !object(v) ||
     !exactKeys(v, ["items", "nextCursor"]) ||
     !Array.isArray(v.items) ||
-    v.items.length > 100 ||
+    v.items.length > expectedLimit ||
     !(v.nextCursor === null || canonicalUuid(v.nextCursor))
   )
     throw new ApiError("invalid");
@@ -393,7 +400,8 @@ export function parseSummaryPage(v: unknown): SummaryPage {
   }
   if (
     v.nextCursor !== null &&
-    (v.items.length === 0 || v.items[v.items.length - 1].id !== v.nextCursor)
+    (v.items.length !== expectedLimit ||
+      v.items[v.items.length - 1].id !== v.nextCursor)
   )
     throw new ApiError("invalid");
   return v as SummaryPage;
@@ -409,6 +417,7 @@ export async function listSummaries(
   const suffix = params.toString();
   return parseSummaryPage(
     await call(`/automations/list${suffix ? `?${suffix}` : ""}`, signal),
+    SUMMARY_DEFAULT_LIMIT,
   );
 }
 export async function listDefinitions(scope: string, signal: AbortSignal) {
