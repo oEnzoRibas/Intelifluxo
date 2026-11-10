@@ -104,10 +104,10 @@ export default function AutomationDashboard({
       <a
         className="dashboard-open"
         href={`#automations/${item.id}`}
-        aria-label={`Open Builder for ${item.name}, ${item.scope}`}
+        aria-label={`${item.name} — ${item.scope}`}
         onClick={onOpen}
       >
-        Open Builder
+        {item.name}
       </a>
     );
   }
@@ -118,7 +118,7 @@ export default function AutomationDashboard({
         <div>
           <h1>Automation Management</h1>
           <p>
-            Discover automations across scopes. Open the Builder to edit a
+            Discover automations across contexts. Open the Builder to edit a
             definition.
           </p>
         </div>
@@ -132,13 +132,13 @@ export default function AutomationDashboard({
       </p>
       <div className="dashboard-controls">
         <form onSubmit={search} noValidate>
-          <label htmlFor="dashboard-search">Search name or scope</label>
+          <label htmlFor="dashboard-search">Search name or Contexto</label>
           <div className="form-row">
             <input
               id="dashboard-search"
               ref={input}
               value={draft}
-              placeholder="Search all scopes"
+              placeholder="Search all contexts"
               onChange={(e) => {
                 setDraft(e.target.value);
                 setInvalid(false);
@@ -167,15 +167,21 @@ export default function AutomationDashboard({
                 name="dashboard-status"
                 value={value}
                 checked={request.active === value}
-                onChange={() =>
+                onChange={() => {
+                  if (draft !== "" && !validText(draft, 200)) {
+                    setInvalid(true);
+                    input.current?.focus();
+                    return;
+                  }
+                  setInvalid(false);
                   load({
-                    q: request.q,
+                    q: draft,
                     active: value,
                     cursor: null,
                     history: [],
                     focus: false,
-                  })
-                }
+                  });
+                }}
               />
               <span>{label}</span>
             </label>
@@ -248,12 +254,11 @@ export default function AutomationDashboard({
                       <tr>
                         {[
                           "Name",
-                          "Scope",
+                          "Contexto",
                           "Status",
                           "Revision",
                           "Schema",
                           "Workflow",
-                          "Action",
                         ].map((x) => (
                           <th scope="col" key={x}>
                             {x}
@@ -265,14 +270,14 @@ export default function AutomationDashboard({
                       {result.page.items.map((item) => (
                         <tr key={item.id}>
                           <td>
-                            <strong>{item.name}</strong>
+                            <strong>{openLink(item)}</strong>
                             <br />
                             <small>Current definition</small>
                           </td>
                           <td>{item.scope}</td>
                           <td>
                             <span
-                              className={item.active ? "dashboard-active" : ""}
+                              className={`dashboard-badge ${item.active ? "dashboard-active" : "dashboard-inactive"}`}
                             >
                               {item.active ? "Active" : "Inactive"}
                             </span>
@@ -280,7 +285,6 @@ export default function AutomationDashboard({
                           <td>{item.revision}</td>
                           <td>v{item.schemaVersion}</td>
                           <td>v{item.workflowVersion}</td>
-                          <td>{openLink(item)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -289,13 +293,19 @@ export default function AutomationDashboard({
                 <ul className="dashboard-cards">
                   {result.page.items.map((item) => (
                     <li key={item.id}>
-                      <h3>{item.name}</h3>
+                      <h3>{openLink(item)}</h3>
                       <p>Current definition</p>
                       <dl>
-                        <dt>Scope</dt>
+                        <dt>Contexto</dt>
                         <dd>{item.scope}</dd>
                         <dt>Status</dt>
-                        <dd>{item.active ? "Active" : "Inactive"}</dd>
+                        <dd>
+                          <span
+                            className={`dashboard-badge ${item.active ? "dashboard-active" : "dashboard-inactive"}`}
+                          >
+                            {item.active ? "Active" : "Inactive"}
+                          </span>
+                        </dd>
                         <dt>Revision</dt>
                         <dd>{item.revision}</dd>
                         <dt>Schema</dt>
@@ -303,7 +313,6 @@ export default function AutomationDashboard({
                         <dt>Workflow</dt>
                         <dd>v{item.workflowVersion}</dd>
                       </dl>
-                      {openLink(item)}
                     </li>
                   ))}
                 </ul>

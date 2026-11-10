@@ -109,14 +109,23 @@
 .dashboard-open {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  padding: 8px 12px;
-  border: 1px solid #7197ca;
+  max-width: 100%;
   color: #d5e8ff;
-  text-decoration: none;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.dashboard-badge {
+  display: inline-block;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  padding: 3px 9px;
+  font-size: 12px;
 }
 .dashboard-active {
   color: #a5e8cb;
+}
+.dashboard-inactive {
+  color: #bdcadb;
 }
 .dashboard-pagination {
   display: flex;
@@ -755,6 +764,15 @@ pre {
 .builder .react-flow__node.builder-node--trigger {
   border-radius: 12px;
 }
+.builder .react-flow__node.builder-node--condition {
+  border-color: var(--builder-warning);
+}
+.builder .react-flow__node.builder-node--action {
+  border-color: var(--builder-success);
+}
+.builder .react-flow__node.builder-node--end {
+  border-style: dashed;
+}
 .builder .react-flow__node.builder-node.selected {
   border: 3px solid var(--builder-action);
 }
@@ -932,4 +950,35 @@ pre {
 }
 .execution-result--ignored {
   border-color: #496caa;
+}
+
+/* Branch labels remain legible against the canvas and follow their own edges. */
+.builder .react-flow__edge-path {
+  stroke: inherit;
+}
+.builder .react-flow__edge-textbg {
+  rx: 4px;
+}
+.builder-workspace > section[aria-label="Accessible path controls"] {
+  padding: 12px 16px;
+  margin-bottom: 12px;
+  background: var(--builder-panel);
+  border: 1px solid var(--builder-grid);
+}
+.builder-workspace > section[aria-label="Accessible path controls"] button {
+  margin: 4px;
+}
+.builder .react-flow__node.builder-node.selected {
+  box-shadow:
+    0 0 0 3px var(--builder-well),
+    0 0 0 5px var(--builder-action);
+}
+.builder .react-flow__node.builder-node--invalid {
+  box-shadow:
+    0 0 0 3px var(--builder-well),
+    0 0 0 5px var(--builder-error);
+}
+.builder .react-flow__node.builder-node--invalid.selected {
+  outline: 3px solid var(--builder-action);
+  outline-offset: 6px;
 }

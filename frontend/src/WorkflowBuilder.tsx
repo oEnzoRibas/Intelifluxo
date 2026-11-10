@@ -20,6 +20,7 @@ import "@fontsource/inter/latin-600.css";
 import "@fontsource/inter/latin-700.css";
 import {
   conditionConfigValid,
+  fieldPathValid,
   edgeIdentity,
   type ConditionConfig,
 } from "./condition-contract";
@@ -92,7 +93,10 @@ function ConditionInspector({
   disabled: boolean;
   onChange: (config: ConditionConfig) => void;
 }) {
-  const invalid = !conditionConfigValid(config);
+  const pathInvalid = !fieldPathValid(config.fieldPath);
+  const valueInvalid =
+    config.operator !== "exists" &&
+    !conditionConfigValid({ ...config, fieldPath: "payload" });
   const valueConfig = config.operator === "exists" ? null : config;
   const [numberText, setNumberText] = useState(() =>
     valueConfig?.expectedType === "number"
@@ -106,12 +110,29 @@ function ConditionInspector({
         Field path
         <input
           value={config.fieldPath}
-          aria-invalid={invalid || undefined}
+          aria-invalid={pathInvalid || undefined}
+          aria-describedby={
+            pathInvalid
+              ? "condition-path-help condition-path-error"
+              : "condition-path-help"
+          }
           onChange={(event) =>
             onChange({ ...config, fieldPath: event.target.value })
           }
         />
       </label>
+      <p id="condition-path-help">
+        Use segmentos separados por ponto, por exemplo payload.total: até 256
+        caracteres no total, 8 segmentos e 64 caracteres por segmento. Cada
+        segmento deve iniciar com letra ASCII ou sublinhado e conter apenas
+        letras ASCII, números ou sublinhado. Não use os segmentos reservados
+        __proto__, prototype ou constructor.
+      </p>
+      {pathInvalid && (
+        <p id="condition-path-error" role="status">
+          Caminho inválido. Corrija-o conforme as regras acima.
+        </p>
+      )}
       <label>
         Operator
         <select
@@ -152,15 +173,15 @@ function ConditionInspector({
           }}
         >
           {[
-            "exists",
-            "equals",
-            "not_equals",
-            "greater_than",
-            "less_than",
-            "contains",
-          ].map((operator) => (
+            ["exists", "Existe"],
+            ["equals", "É igual a"],
+            ["not_equals", "É diferente de"],
+            ["greater_than", "É maior que"],
+            ["less_than", "É menor que"],
+            ["contains", "Contém"],
+          ].map(([operator, label]) => (
             <option key={operator} value={operator}>
-              {operator}
+              {label}
             </option>
           ))}
         </select>
@@ -192,13 +213,23 @@ function ConditionInspector({
                 });
               }}
             >
-              {["string", "number", "boolean", "null"].map((type) => (
+              {(config.operator === "greater_than" ||
+              config.operator === "less_than"
+                ? ["number"]
+                : config.operator === "contains"
+                  ? ["string"]
+                  : ["string", "number", "boolean", "null"]
+              ).map((type) => (
                 <option key={type} value={type}>
                   {type}
                 </option>
               ))}
             </select>
           </label>
+          <p>
+            Ao alterar o tipo, o valor é redefinido. Alterar o operador mantém o
+            valor quando o tipo é compatível.
+          </p>
           {valueConfig.expectedType === "boolean" ? (
             <label>
               Expected value
@@ -226,7 +257,12 @@ function ConditionInspector({
                     ? numberText
                     : String(valueConfig.expectedValue)
                 }
-                aria-invalid={invalid || undefined}
+                aria-invalid={valueInvalid || undefined}
+                aria-describedby={
+                  valueInvalid
+                    ? "condition-value-help condition-value-error"
+                    : "condition-value-help"
+                }
                 onChange={(event) => {
                   const text = event.target.value;
                   if (valueConfig.expectedType === "number")
@@ -243,13 +279,22 @@ function ConditionInspector({
               />
             </label>
           )}
+          {(valueConfig.expectedType === "string" ||
+            valueConfig.expectedType === "number") && (
+            <p id="condition-value-help">
+              {valueConfig.expectedType === "number"
+                ? "Informe um número finito."
+                : "Use até 1024 caracteres válidos, sem caractere nulo."}
+            </p>
+          )}
+          {valueInvalid && (
+            <p id="condition-value-error" role="status">
+              {valueConfig.expectedType === "number"
+                ? "Informe um número finito válido."
+                : "Informe um texto válido com até 1024 caracteres e sem caractere nulo."}
+            </p>
+          )}
         </>
-      )}
-      {invalid && (
-        <p role="status">
-          Incomplete or invalid condition configuration. Check the field path,
-          type, and value for the selected operator.
-        </p>
       )}
     </fieldset>
   );
@@ -326,6 +371,21 @@ export function flowEdges(graph: WorkflowGraph) {
     id: edgeIdentity(e),
     sourceHandle: e.sourcePort,
     label: e.sourcePort,
+    labelStyle: {
+      fill: e.sourcePort === "TRUE" ? "#73c7a1" : "#e6edf6",
+      fontWeight: 700,
+      fontSize: 14,
+    },
+    labelBgStyle: { fill: "#0b1016", fillOpacity: 1 },
+    labelBgPadding: [8, 5] as [number, number],
+    style: {
+      stroke:
+        e.sourcePort === "TRUE"
+          ? "#73c7a1"
+          : e.sourcePort === "FALSE"
+            ? "#b9c8d8"
+            : "#b6d3ff",
+    },
     ariaLabel: `${e.source} to ${e.target}${e.sourcePort ? ` via ${e.sourcePort}` : ""}`,
     markerEnd: { type: MarkerType.ArrowClosed, color: "#b6d3ff" },
     type: "step",
@@ -638,8 +698,8 @@ export default function WorkflowBuilder({
       )}
       {v2 && !definition.active && (
         <p>
-          Condition workflow topology is fixed. Configuration and position
-          changes can be saved.
+          Este fluxo tem uma estrutura fixa: você pode configurar a condição e
+          mover os nós, sem alterar as conexões.
         </p>
       )}
       {!v2 && (
@@ -731,7 +791,11 @@ export default function WorkflowBuilder({
           </button>
           <span className="builder-index">01 / LIBRARY</span>
           <h3>Available nodes</h3>
-          <p>Add a node using the controls below.</p>
+          <p>
+            {v2
+              ? "Fixed topology: existing nodes cannot be added or removed."
+              : "Add a node using the controls below."}
+          </p>
           <button
             disabled={
               !editable || v2 || draft.nodes.some((n) => n.kind === "trigger")
@@ -757,94 +821,101 @@ export default function WorkflowBuilder({
             + Condition (placeholder)
           </button>
           <button disabled>ViaCEP · future</button>
-          <h3>Accessible path controls</h3>
-          {v2 && (
-            <ul aria-label="Workflow connections">
-              {draft.edges.map((edge) => (
-                <li key={edgeIdentity(edge)}>
-                  {nodeLabel(
-                    draft.nodes.find((node) => node.id === edge.source)!,
-                  )}{" "}
-                  {edge.sourcePort ? `— ${edge.sourcePort} →` : "→"}{" "}
-                  {nodeLabel(
-                    draft.nodes.find((node) => node.id === edge.target)!,
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
-          <button
-            disabled={!editable || v2}
-            onClick={() =>
-              setDraft((g) => {
-                const defaults = defaultGraph();
-                const retainedTrigger = g.nodes.find(
-                  (n) => n.kind === "trigger",
-                );
-                const retainedAction = g.nodes.find((n) => n.kind === "action");
-                const used = new Set(
-                  [retainedTrigger, retainedAction]
-                    .filter((n): n is GraphNode => n !== undefined)
-                    .map((n) => n.id),
-                );
-                const rebuild = (node: GraphNode) => {
-                  let id = node.id;
-                  for (let suffix = 1; used.has(id); suffix++)
-                    id = `${node.id}-${suffix}`;
-                  used.add(id);
-                  return { ...node, id };
-                };
-                const trigger = retainedTrigger ?? rebuild(defaults.nodes[0]);
-                const action = retainedAction ?? rebuild(defaults.nodes[1]);
-                return {
-                  ...g,
-                  nodes: [trigger, action],
-                  edges: [{ source: trigger.id, target: action.id }],
-                };
-              })
-            }
-          >
-            Reset to executable path
-          </button>
-          <button
-            disabled={
-              !editable ||
-              v2 ||
-              draft.nodes.length !== 2 ||
-              !draft.nodes.some((n) => n.kind === "trigger") ||
-              !draft.nodes.some((n) => n.kind === "action")
-            }
-            onClick={() => {
-              const t = draft.nodes.find((n) => n.kind === "trigger")!,
-                a = draft.nodes.find((n) => n.kind === "action")!;
-              setDraft((g) => ({
-                ...g,
-                edges: [{ source: t.id, target: a.id }],
-              }));
-            }}
-          >
-            Connect trigger to action
-          </button>
-          <button
-            disabled={!editable || v2 || draft.nodes.length !== 3}
-            onClick={() => {
-              const t = draft.nodes.find((n) => n.kind === "trigger"),
-                c = draft.nodes.find((n) => n.kind === "condition"),
-                a = draft.nodes.find((n) => n.kind === "action");
-              if (t && c && a)
-                setDraft((g) => ({
-                  ...g,
-                  edges: [
-                    { source: t.id, target: c.id },
-                    { source: c.id, target: a.id },
-                  ],
-                }));
-            }}
-          >
-            Connect through condition
-          </button>
         </aside>
         <div className="builder-workspace">
+          <section aria-label="Accessible path controls">
+            <h3>Accessible path controls</h3>
+            {v2 && (
+              <section aria-label="Connection summary">
+                <h4>Connection summary</h4>
+                <ul aria-label="Workflow connections">
+                  {draft.edges.map((edge) => (
+                    <li key={edgeIdentity(edge)}>
+                      {nodeLabel(
+                        draft.nodes.find((node) => node.id === edge.source)!,
+                      )}{" "}
+                      {edge.sourcePort ? `— ${edge.sourcePort} →` : "→"}{" "}
+                      {nodeLabel(
+                        draft.nodes.find((node) => node.id === edge.target)!,
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+            <button
+              disabled={!editable || v2}
+              onClick={() =>
+                setDraft((g) => {
+                  const defaults = defaultGraph();
+                  const retainedTrigger = g.nodes.find(
+                    (n) => n.kind === "trigger",
+                  );
+                  const retainedAction = g.nodes.find(
+                    (n) => n.kind === "action",
+                  );
+                  const used = new Set(
+                    [retainedTrigger, retainedAction]
+                      .filter((n): n is GraphNode => n !== undefined)
+                      .map((n) => n.id),
+                  );
+                  const rebuild = (node: GraphNode) => {
+                    let id = node.id;
+                    for (let suffix = 1; used.has(id); suffix++)
+                      id = `${node.id}-${suffix}`;
+                    used.add(id);
+                    return { ...node, id };
+                  };
+                  const trigger = retainedTrigger ?? rebuild(defaults.nodes[0]);
+                  const action = retainedAction ?? rebuild(defaults.nodes[1]);
+                  return {
+                    ...g,
+                    nodes: [trigger, action],
+                    edges: [{ source: trigger.id, target: action.id }],
+                  };
+                })
+              }
+            >
+              Reset to executable path
+            </button>
+            <button
+              disabled={
+                !editable ||
+                v2 ||
+                draft.nodes.length !== 2 ||
+                !draft.nodes.some((n) => n.kind === "trigger") ||
+                !draft.nodes.some((n) => n.kind === "action")
+              }
+              onClick={() => {
+                const t = draft.nodes.find((n) => n.kind === "trigger")!,
+                  a = draft.nodes.find((n) => n.kind === "action")!;
+                setDraft((g) => ({
+                  ...g,
+                  edges: [{ source: t.id, target: a.id }],
+                }));
+              }}
+            >
+              Connect trigger to action
+            </button>
+            <button
+              disabled={!editable || v2 || draft.nodes.length !== 3}
+              onClick={() => {
+                const t = draft.nodes.find((n) => n.kind === "trigger"),
+                  c = draft.nodes.find((n) => n.kind === "condition"),
+                  a = draft.nodes.find((n) => n.kind === "action");
+                if (t && c && a)
+                  setDraft((g) => ({
+                    ...g,
+                    edges: [
+                      { source: t.id, target: c.id },
+                      { source: c.id, target: a.id },
+                    ],
+                  }));
+              }}
+            >
+              Connect through condition
+            </button>
+          </section>
           <p className="builder-command">
             Canvas · {draft.nodes.length} nodes / {draft.edges.length}{" "}
             connections
@@ -908,7 +979,7 @@ export default function WorkflowBuilder({
             </button>
           ))}
           {v2 && chosen && (
-            <div aria-label="Move selected node without dragging">
+            <div role="group" aria-label="Move selected node without dragging">
               {(
                 [
                   ["left", -20, 0],
