@@ -1,5 +1,10 @@
 # Increments 1–2A.2: local proof only
 
+> This document preserves the backend contract and historical increment notes.
+> For the current runnable MVP, automatic supervisor, Conditions and ViaCEP,
+> start with the [project guide](../README.md). Manual daemon limitations below
+> describe the earlier direct-entrypoint workflow, not the current supervisor.
+
 This is a local-development executable slice, **not production software**, full R1–R6 conformance, or evidence for any of the 176 architecture fixtures. Use disposable local services and synthetic data only. No authentication, tenant isolation, authorization or revocation serialization exists; `scope` is caller-supplied data, not a security boundary. The API listens on loopback only. Do not expose it or connect it to shared infrastructure.
 
 ## Run (PowerShell, Node 24)

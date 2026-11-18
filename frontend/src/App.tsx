@@ -1,3 +1,4 @@
+import Overview from "./Overview";
 import Automations from "./Automations";
 import {
   useEffect,
@@ -6,14 +7,7 @@ import {
   type FormEvent,
   type ReactNode,
 } from "react";
-import {
-  ApiError,
-  getEvent,
-  getProfile,
-  validId,
-  type EventDetail,
-  type Profile,
-} from "./api";
+import { ApiError, getEvent, validId, type EventDetail } from "./api";
 type Load<T> =
   | { kind: "idle" | "loading" | "error" | "not-found" }
   | { kind: "ready"; data: T };
@@ -36,6 +30,18 @@ function App() {
           : "overview",
   );
   const viewRef = useRef(view);
+  const menuRef = useRef<HTMLDetailsElement>(null);
+  const pageTitle =
+    view === "overview"
+      ? "Visão geral"
+      : view === "explorer"
+        ? "Explorador de eventos"
+        : /\/builder$/i.test(route)
+          ? "Editor de fluxo"
+          : "Automações";
+  useEffect(() => {
+    document.title = `${pageTitle} | InteliFluxo`;
+  }, [pageTitle]);
   const request = useRef<AbortController | null>(null);
   const submittedId = useRef<string | null>(null);
   const [event, setEvent] = useState<Load<EventDetail>>({ kind: "idle" });
@@ -68,6 +74,8 @@ function App() {
       viewRef.current = next;
       setView(next);
       setRoute(window.location.hash);
+      if (window.matchMedia?.("(max-width: 767px)").matches && menuRef.current)
+        menuRef.current.open = false;
       if (next === "explorer") {
         const eventId = new URLSearchParams(
           window.location.hash.split("?")[1] ?? "",
@@ -83,24 +91,7 @@ function App() {
     window.addEventListener("hashchange", syncView);
     return () => window.removeEventListener("hashchange", syncView);
   }, []);
-  const [profile, setProfile] = useState<Load<Profile>>({ kind: "loading" });
-  const [refresh, setRefresh] = useState(0);
-  const [showRetry, setShowRetry] = useState(false);
   const [error, setError] = useState("");
-  useEffect(() => {
-    const controller = new AbortController();
-    getProfile(controller.signal)
-      .then((data) => {
-        if (!controller.signal.aborted) setProfile({ kind: "ready", data });
-      })
-      .catch(() => {
-        if (!controller.signal.aborted) {
-          setProfile({ kind: "error" });
-          setShowRetry(true);
-        }
-      });
-    return () => controller.abort();
-  }, [refresh]);
   useEffect(() => () => request.current?.abort(), []);
   function lookup(e: FormEvent) {
     e.preventDefault();
@@ -258,9 +249,11 @@ function App() {
   return (
     <>
       <a className="skip" href="#main">
-        Skip to main content
+        Ir para o conteúdo principal
       </a>
-      <div className="layout">
+      <div
+        className={`layout${/^#automations\/[0-9a-f-]+\/builder$/i.test(route) ? " layout--builder" : ""}`}
+      >
         <aside className="sidebar">
           <div className="brand">
             <span className="mark" aria-hidden="true">
@@ -268,139 +261,67 @@ function App() {
             </span>
             <div>
               <strong>InteliFluxo</strong>
-              <small>Operations</small>
+              <small>Operações</small>
             </div>
           </div>
-          <nav aria-label="Primary">
-            <span className="nav-label">WORKSPACE</span>
-            <a
-              href="#overview"
-              aria-current={view === "overview" ? "page" : undefined}
-              onClick={() => {
-                if (viewRef.current === "explorer" && request.current) {
-                  request.current.abort();
-                  request.current = null;
-                  setEvent({ kind: "idle" });
-                }
+          <details
+            ref={menuRef}
+            className="mobile-menu"
+            open={!(window.matchMedia?.("(max-width: 767px)").matches ?? false)}
+          >
+            <summary>Menu</summary>
+            <nav
+              aria-label="Navegação principal"
+              onClick={(event) => {
+                if (
+                  (event.target as HTMLElement).closest("a") &&
+                  window.matchMedia?.("(max-width: 767px)").matches &&
+                  menuRef.current
+                )
+                  menuRef.current.open = false;
               }}
             >
-              <span aria-hidden="true">▦</span> Overview
-            </a>
-            <a
-              href="#explorer"
-              aria-current={view === "explorer" ? "page" : undefined}
-            >
-              Event Explorer
-            </a>
-            <a
-              href="#automations"
-              aria-current={view === "automations" ? "page" : undefined}
-            >
-              Automations
-            </a>
-          </nav>
+              <a
+                href="#overview"
+                aria-current={view === "overview" ? "page" : undefined}
+              >
+                Visão geral
+              </a>
+              <a
+                href="#automations"
+                aria-current={view === "automations" ? "page" : undefined}
+              >
+                Automações
+              </a>
+              <details>
+                <summary>Avançado / Diagnóstico</summary>
+                <a
+                  href="#explorer"
+                  aria-current={view === "explorer" ? "page" : undefined}
+                >
+                  Event Explorer
+                </a>
+              </details>
+            </nav>
+          </details>
           <p className="side-note">
-            Local development
+            Ambiente local
             <br />
-            <span>Operator workspace</span>
+            <span>Operações e automações</span>
           </p>
         </aside>
         <div className="workspace">
           <header className="topbar">
             <span>
-              Operations /{" "}
-              <strong>
-                {view === "overview"
-                  ? "Overview"
-                  : view === "explorer"
-                    ? "Event Explorer"
-                    : "Automations"}
-              </strong>
+              Operações / <strong>{pageTitle}</strong>
             </span>
-            <span className="environment">Local profile</span>
+            <span className="environment">Ambiente local</span>
           </header>
           <main id="main" tabIndex={-1}>
             {view === "automations" ? (
               <Automations route={route} />
             ) : view === "overview" ? (
-              <>
-                <div className="heading">
-                  <div>
-                    <p className="eyebrow">OPERATIONS</p>
-                    <h1>Operational Overview</h1>
-                    <p>Service profile and event lookup.</p>
-                  </div>
-                </div>
-                <div className="grid">
-                  <Panel title="Service profile">
-                    <div aria-live="polite">
-                      {profile.kind === "loading" && (
-                        <p>Loading service profile…</p>
-                      )}
-                      {profile.kind === "error" && (
-                        <>
-                          <p className="notice">
-                            Service profile unavailable. The API could not be
-                            reached or returned an unexpected response.
-                          </p>
-                        </>
-                      )}
-                      {profile.kind === "ready" && (
-                        <>
-                          <p>
-                            <span className="badge">API responded</span>
-                          </p>
-                          <dl>
-                            <dt>Profile</dt>
-                            <dd>{profile.data.profile}</dd>
-                          </dl>
-                          <p className="muted">
-                            A response does not indicate broker, database, or
-                            worker health.
-                          </p>
-                          <h3>Reported limitations</h3>
-                          {profile.data.limitations.length ? (
-                            <ul>
-                              {profile.data.limitations.map((x) => (
-                                <li key={x}>{x}</li>
-                              ))}
-                            </ul>
-                          ) : (
-                            <p>No limitations reported.</p>
-                          )}
-                        </>
-                      )}
-                    </div>
-                    {showRetry && (
-                      <button
-                        type="button"
-                        aria-disabled={profile.kind === "loading"}
-                        onClick={() => {
-                          if (profile.kind === "loading") return;
-                          setProfile({ kind: "loading" });
-                          setRefresh((x) => x + 1);
-                        }}
-                      >
-                        Retry
-                      </button>
-                    )}
-                  </Panel>
-                  <Panel title="Operational metrics">
-                    <p className="unavailable">Unavailable</p>
-                    <p className="muted">
-                      Aggregate metrics are not provided by the current API.
-                    </p>
-                  </Panel>
-                  {lookupPanel}
-                  <Panel title="Recent events">
-                    <p className="unavailable">Unavailable</p>
-                    <p className="muted">
-                      The current API does not provide an event list. Use event
-                      lookup instead.
-                    </p>
-                  </Panel>
-                </div>
-              </>
+              <Overview />
             ) : (
               <>
                 <div className="heading">

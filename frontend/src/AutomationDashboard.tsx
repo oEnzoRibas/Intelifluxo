@@ -104,41 +104,40 @@ export default function AutomationDashboard({
       <a
         className="dashboard-open"
         href={`#automations/${item.id}`}
-        aria-label={`Open Builder for ${item.name}, ${item.scope}`}
+        aria-label={`${item.name} — ${item.scope}`}
         onClick={onOpen}
       >
-        Open Builder
+        {item.name}
+        {(item.schemaVersion > 3 || item.workflowVersion > 3) &&
+          " · Versão não compatível · somente leitura"}
       </a>
     );
   }
   return (
     <div hidden={!visible} className="dashboard">
-      <p className="eyebrow">WORKFLOWS / AUTOMATIONS</p>
+      <p className="eyebrow">SEUS FLUXOS</p>
       <div className="heading">
         <div>
-          <h1>Automation Management</h1>
-          <p>
-            Discover automations across scopes. Open the Builder to edit a
-            definition.
-          </p>
+          <h1>Automações</h1>
+          <p>Configure seus fluxos e acompanhe o resultado de cada execução.</p>
         </div>
         <a className="button-link" href="#automations/create">
-          + Create Automation
+          + Criar automação
         </a>
       </div>
       <p className="dashboard-limit">
-        Local development only / No authentication or tenant isolation /
-        Synthetic data only
+        Ambiente local · utilize dados sintéticos. Sem autenticação ou
+        isolamento entre usuários.
       </p>
       <div className="dashboard-controls">
         <form onSubmit={search} noValidate>
-          <label htmlFor="dashboard-search">Search name or scope</label>
+          <label htmlFor="dashboard-search">Buscar por nome ou contexto</label>
           <div className="form-row">
             <input
               id="dashboard-search"
               ref={input}
               value={draft}
-              placeholder="Search all scopes"
+              placeholder="Nome da automação ou contexto"
               onChange={(e) => {
                 setDraft(e.target.value);
                 setInvalid(false);
@@ -146,20 +145,20 @@ export default function AutomationDashboard({
               aria-invalid={invalid}
               aria-describedby={invalid ? "search-error" : undefined}
             />
-            <button>Search</button>
+            <button>Buscar</button>
           </div>
           {invalid && (
             <p id="search-error" role="alert">
-              Enter a valid search of up to 200 characters, or leave it blank.
+              Use até 200 caracteres ou deixe a busca em branco.
             </p>
           )}
         </form>
         <fieldset className="dashboard-status">
           <legend>Status</legend>
           {[
-            ["all", "All"],
-            ["true", "Active"],
-            ["false", "Inactive"],
+            ["all", "Todas"],
+            ["true", "Ativas"],
+            ["false", "Desativadas"],
           ].map(([value, label]) => (
             <label key={value}>
               <input
@@ -167,22 +166,28 @@ export default function AutomationDashboard({
                 name="dashboard-status"
                 value={value}
                 checked={request.active === value}
-                onChange={() =>
+                onChange={() => {
+                  if (draft !== "" && !validText(draft, 200)) {
+                    setInvalid(true);
+                    input.current?.focus();
+                    return;
+                  }
+                  setInvalid(false);
                   load({
-                    q: request.q,
+                    q: draft,
                     active: value,
                     cursor: null,
                     history: [],
                     focus: false,
-                  })
-                }
+                  });
+                }}
               />
               <span>{label}</span>
             </label>
           ))}
         </fieldset>
         <button className="dashboard-reset" onClick={reset}>
-          Reset filters
+          Limpar filtros
         </button>
       </div>
       <section
@@ -191,27 +196,27 @@ export default function AutomationDashboard({
         aria-busy={result.kind === "loading"}
       >
         <h2 id="dashboard-results-heading" ref={heading} tabIndex={-1}>
-          Current results
+          Resultados
         </h2>
-        <p className="muted">Ordered by ID / Live results, not a snapshot</p>
+        <p className="muted">Resultados atuais, ordenados por identificador.</p>
         <p role="status" className="sr-only">
           {result.kind === "loading"
-            ? "Loading automations"
+            ? "Carregando automações"
             : result.kind === "ready"
-              ? "Results updated"
+              ? "Resultados atualizados"
               : ""}
         </p>
         {result.kind === "loading" ? (
-          <p>Loading automations…</p>
+          <p>Carregando automações…</p>
         ) : result.kind === "error" ? (
           <div>
             <p role="alert">
-              The automation service could not return results. Try again.
+              Não foi possível carregar as automações. Tente novamente.
             </p>
             <button onClick={() => load({ ...request, focus: true })}>
-              Retry
+              Tentar novamente
             </button>
-            <button onClick={reset}>Reset filters</button>
+            <button onClick={reset}>Limpar filtros</button>
           </div>
         ) : (
           <>
@@ -219,23 +224,23 @@ export default function AutomationDashboard({
               <div className="dashboard-empty">
                 {committed.cursor !== null ? (
                   <>
-                    <h3>No more current matches</h3>
+                    <h3>Fim dos resultados</h3>
                     <p>
-                      Results may have changed. Go back or restart the list.
+                      A lista pode ter mudado. Volte ou atualize os resultados.
                     </p>
                   </>
                 ) : committed.q || committed.active !== "all" ? (
                   <>
-                    <h3>No matching automations</h3>
-                    <p>Try another search or reset filters.</p>
-                    <button onClick={reset}>Reset filters</button>
+                    <h3>Nenhuma automação encontrada</h3>
+                    <p>Tente outra busca ou limpe os filtros.</p>
+                    <button onClick={reset}>Limpar filtros</button>
                   </>
                 ) : (
                   <>
-                    <h3>No automations yet</h3>
-                    <p>Create an automation to get started.</p>
+                    <h3>Crie sua primeira automação</h3>
+                    <p>Escolha um modelo e configure as etapas para começar.</p>
                     <a className="button-link" href="#automations/create">
-                      Create Automation
+                      Criar automação
                     </a>
                   </>
                 )}
@@ -247,13 +252,12 @@ export default function AutomationDashboard({
                     <thead>
                       <tr>
                         {[
-                          "Name",
-                          "Scope",
+                          "Nome",
+                          "Contexto",
                           "Status",
-                          "Revision",
+                          "Revisão",
                           "Schema",
                           "Workflow",
-                          "Action",
                         ].map((x) => (
                           <th scope="col" key={x}>
                             {x}
@@ -265,22 +269,21 @@ export default function AutomationDashboard({
                       {result.page.items.map((item) => (
                         <tr key={item.id}>
                           <td>
-                            <strong>{item.name}</strong>
+                            <strong>{openLink(item)}</strong>
                             <br />
-                            <small>Current definition</small>
+                            <small>Definição atual</small>
                           </td>
                           <td>{item.scope}</td>
                           <td>
                             <span
-                              className={item.active ? "dashboard-active" : ""}
+                              className={`dashboard-badge ${item.active ? "dashboard-active" : "dashboard-inactive"}`}
                             >
-                              {item.active ? "Active" : "Inactive"}
+                              {item.active ? "Ativas" : "Desativadas"}
                             </span>
                           </td>
                           <td>{item.revision}</td>
                           <td>v{item.schemaVersion}</td>
                           <td>v{item.workflowVersion}</td>
-                          <td>{openLink(item)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -289,21 +292,26 @@ export default function AutomationDashboard({
                 <ul className="dashboard-cards">
                   {result.page.items.map((item) => (
                     <li key={item.id}>
-                      <h3>{item.name}</h3>
-                      <p>Current definition</p>
+                      <h3>{openLink(item)}</h3>
+                      <p>Definição atual</p>
                       <dl>
-                        <dt>Scope</dt>
+                        <dt>Contexto</dt>
                         <dd>{item.scope}</dd>
                         <dt>Status</dt>
-                        <dd>{item.active ? "Active" : "Inactive"}</dd>
-                        <dt>Revision</dt>
+                        <dd>
+                          <span
+                            className={`dashboard-badge ${item.active ? "dashboard-active" : "dashboard-inactive"}`}
+                          >
+                            {item.active ? "Ativas" : "Desativadas"}
+                          </span>
+                        </dd>
+                        <dt>Revisão</dt>
                         <dd>{item.revision}</dd>
                         <dt>Schema</dt>
                         <dd>v{item.schemaVersion}</dd>
                         <dt>Workflow</dt>
                         <dd>v{item.workflowVersion}</dd>
                       </dl>
-                      {openLink(item)}
                     </li>
                   ))}
                 </ul>
@@ -313,8 +321,8 @@ export default function AutomationDashboard({
               <div className="dashboard-pagination">
                 <p>
                   {result.page.nextCursor
-                    ? "More results available."
-                    : "End of current results."}
+                    ? "Há mais resultados."
+                    : "Fim dos resultados."}
                 </p>
                 <div>
                   <button
@@ -328,7 +336,7 @@ export default function AutomationDashboard({
                       })
                     }
                   >
-                    Previous
+                    Anterior
                   </button>
                   <button
                     disabled={!result.page.nextCursor}
@@ -341,7 +349,7 @@ export default function AutomationDashboard({
                       })
                     }
                   >
-                    Next
+                    Próxima
                   </button>
                   <button
                     onClick={() =>
@@ -353,7 +361,7 @@ export default function AutomationDashboard({
                       })
                     }
                   >
-                    Restart list
+                    Atualizar lista
                   </button>
                 </div>
               </div>

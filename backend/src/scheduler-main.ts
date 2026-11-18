@@ -1,14 +1,3 @@
-import { database } from "./db.js";
-import { scheduleOnce } from "./scheduler.js";
+import { main } from "./runtime-entrypoint.js";
 
-const pool = database();
-try {
-  console.log(
-    JSON.stringify({
-      event: "scheduler_sweep",
-      released: await scheduleOnce(pool),
-    }),
-  );
-} finally {
-  await pool.end();
-}
+export const run = (args: string[]) => main("scheduler", args);

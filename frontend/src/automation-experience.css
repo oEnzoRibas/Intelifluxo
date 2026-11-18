@@ -1,0 +1,410 @@
+.primary-button,
+button.primary-button {
+  background: #b6d3ff;
+  color: #102032;
+  border-color: #b6d3ff;
+  font-weight: 700;
+}
+.flow-toolbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  align-items: center;
+  padding-bottom: 24px;
+}
+.flow-toolbar h2 {
+  margin: 0 0 8px;
+}
+.flow-toolbar p {
+  margin-block: 6px;
+}
+.flow-save {
+  display: grid;
+  gap: 10px;
+  text-align: right;
+  flex-shrink: 0;
+}
+.flow-save-state {
+  color: var(--if-muted);
+  font-size: 13px;
+}
+.flow-draft-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-left: 3px solid var(--if-warning);
+  padding: 8px 16px;
+  margin-bottom: 20px;
+  background: var(--if-raised);
+}
+.viacep-builder .viacep-layout {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+.viacep-builder .viacep-has-inspector {
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
+}
+.viacep-nodes {
+  border: 1px solid #34495e;
+  border-radius: 12px;
+  background-color: #111a24;
+  background-image: radial-gradient(#34475b 1px, transparent 1px);
+  background-size: 20px 20px;
+  padding: 32px 24px 20px;
+}
+.cep-flow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 40px 32px;
+  max-width: 740px;
+  margin: 0 auto;
+  padding: 0;
+  list-style: none;
+}
+.viacep-nodes .cep-step {
+  position: relative;
+  border: 1px solid #486078;
+  border-radius: 12px;
+  background: var(--if-panel);
+  padding: 20px;
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  min-width: 0;
+}
+.cep-step strong {
+  display: block;
+  font-size: 16px;
+  margin-bottom: 5px;
+  color: var(--if-text);
+}
+.cep-step span:not(.step-number):not(.flow-branch) {
+  display: block;
+}
+.cep-step div > span,
+.cep-step small,
+.cep-step button > span > span {
+  font-size: 13px;
+  color: var(--if-muted);
+  line-height: 1.5;
+}
+.cep-step small {
+  display: block;
+  margin-top: 8px;
+  color: var(--if-action);
+}
+.step-number {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  background: #263b52;
+  color: #c4ddff;
+  border-radius: 9px;
+  font-size: 12px;
+  font-weight: 700;
+}
+.cep-flow .cep-step--trigger,
+.cep-flow .cep-step--lookup,
+.cep-flow .cep-step--condition {
+  grid-column: 1 / -1;
+  width: min(100%, 380px);
+  justify-self: center;
+}
+.cep-flow .cep-step--lookup,
+.cep-flow .cep-step--condition {
+  padding: 0;
+}
+.cep-flow .cep-step--condition {
+  border-color: #ae8c50;
+}
+.cep-step button {
+  width: 100%;
+  border: 0;
+  padding: 20px;
+  background: transparent;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  border-radius: 11px;
+}
+.cep-step button:hover,
+.cep-step button[aria-pressed="true"] {
+  background: #24384e;
+  box-shadow: 0 0 0 2px var(--if-action);
+}
+.cep-step--trigger::after,
+.cep-step--lookup::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  height: 40px;
+  left: 50%;
+  border-left: 2px solid #64809a;
+}
+.cep-step--condition::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  height: 20px;
+  left: 50%;
+  border-left: 2px solid #64809a;
+}
+.cep-step--action::before,
+.cep-step--end::before {
+  content: "";
+  position: absolute;
+  bottom: 100%;
+  height: 20px;
+  width: calc(50% + 17px);
+  border-top: 2px solid #64809a;
+}
+.cep-step--action::before {
+  left: 50%;
+  border-left: 2px solid #64809a;
+}
+.cep-step--end::before {
+  right: 50%;
+  border-right: 2px solid #64809a;
+}
+.cep-step--action,
+.cep-step--end {
+  margin-top: 20px;
+}
+.flow-branch {
+  position: absolute;
+  bottom: calc(100% + 5px);
+  left: 0;
+  right: 0;
+  font-size: 10px;
+  text-align: center;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--if-muted);
+  background: #111a24;
+}
+.flow-branch--yes {
+  color: var(--if-success);
+}
+.flow-caption {
+  font-size: 13px;
+  line-height: 1.6;
+  text-align: center;
+  max-width: 620px;
+  margin: 24px auto 0;
+  color: var(--if-muted);
+}
+.viacep-inspector {
+  padding: 20px;
+  border: 1px solid #486078;
+  border-radius: 12px;
+  background: #192534;
+}
+.viacep-inspector fieldset {
+  border: 0;
+  padding: 0;
+  margin: 16px 0;
+}
+.viacep-inspector p {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--if-muted);
+}
+.viacep-inspector label {
+  font-size: 14px;
+}
+.viacep-inspector input,
+.viacep-inspector select {
+  width: 100%;
+  min-width: 0;
+}
+.viacep-inspector > .primary-button {
+  width: 100%;
+}
+.flow-notes {
+  margin-top: 24px;
+  color: var(--if-muted);
+  font-size: 13px;
+}
+.flow-notes summary {
+  cursor: pointer;
+  padding: 8px 0;
+}
+.automation-create {
+  max-width: 860px;
+}
+.automation-create > label {
+  display: block;
+  margin: 24px 0 8px;
+  font-weight: 600;
+}
+.automation-create > input {
+  width: 100%;
+}
+.automation-type-options {
+  border: 0;
+  padding: 0;
+  margin: 0 0 24px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.automation-type-options legend {
+  margin-bottom: 16px;
+  font-weight: 600;
+}
+.automation-type-options label {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  border: 1px solid #486078;
+  border-radius: 12px;
+  padding: 20px;
+  cursor: pointer;
+  background: #111a24;
+}
+.automation-type-options label:has(:checked) {
+  background: #233952;
+  border-color: var(--if-action);
+  box-shadow: inset 0 0 0 1px var(--if-action);
+}
+.automation-type-options label:has(:disabled) {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+.automation-type-options input[type="radio"] {
+  min-height: 20px;
+  margin: 2px 0;
+  accent-color: #b6d3ff;
+  width: 20px;
+  flex-shrink: 0;
+}
+.automation-type-options strong,
+.automation-type-options small {
+  display: block;
+}
+.automation-type-options small {
+  color: var(--if-muted);
+  line-height: 1.6;
+  margin-top: 8px;
+  font-size: 13px;
+}
+.automation-detail-header {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+  align-items: center;
+}
+.automation-detail-header h2 {
+  margin: 0;
+}
+.test-event-panel > p {
+  color: var(--if-muted);
+  line-height: 1.6;
+}
+.test-event-panel .test-scope-notice {
+  border-left: 3px solid var(--if-warning);
+  padding: 10px 14px;
+  background: var(--if-raised);
+}
+.test-data-fields {
+  border: 1px solid #486078;
+  border-radius: 10px;
+  padding: 16px;
+  display: grid;
+  gap: 12px;
+}
+.test-data-fields label {
+  display: grid;
+  gap: 8px;
+}
+.test-data-fields p {
+  margin: 0;
+  color: var(--if-muted);
+  font-size: 13px;
+}
+.test-event-panel form {
+  max-width: 800px;
+}
+.viacep-result {
+  border-left: 3px solid var(--if-action);
+  padding: 4px 16px;
+}
+.viacep-result--found {
+  border-color: var(--if-success);
+}
+.viacep-result--failed {
+  border-color: var(--if-error);
+}
+.viacep-result > p:first-child {
+  font-weight: 700;
+}
+.viacep-address {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 24px;
+}
+.viacep-address dt {
+  color: var(--if-muted);
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+.viacep-address dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 1100px) {
+  .viacep-builder .viacep-has-inspector {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 599px) {
+  .flow-toolbar,
+  .flow-draft-notice {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .flow-save {
+    text-align: left;
+  }
+  .viacep-nodes {
+    padding: 24px 12px 16px;
+  }
+  .cep-flow {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 32px;
+  }
+  .cep-flow .cep-step {
+    grid-column: 1;
+    width: 100%;
+  }
+  .cep-step--action::before,
+  .cep-step--end::before {
+    display: none;
+  }
+  .cep-step--trigger::after,
+  .cep-step--lookup::after {
+    height: 32px;
+  }
+  .cep-step--condition::after {
+    height: 24px;
+  }
+  .cep-step--action::after {
+    content: "↓";
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    color: var(--if-muted);
+  }
+  .automation-type-options {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .viacep-address {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
