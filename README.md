@@ -30,6 +30,8 @@ O projeto combina uma aplicação executável com uma experiência documentada d
 
 ## Demonstração real
 
+**Consulta ViaCEP funcionando:** [passo a passo e resultado real](docs/demo/README.md) · [vídeo guiado de 53 segundos](docs/demo/viacep-passo-a-passo.mp4). O fluxo consulta um CEP, compara a UF e registra um recibo local.
+
 Capturas da aplicação local em execução, em 17/11/2026. Os dados são de demonstração e as contagens representam a janela consultada, não um benchmark.
 
 ### Visão geral
@@ -271,4 +273,4 @@ Evoluções plausíveis: autenticação e escopo autorizado, descoberta paginada
 - [Contribuir](CONTRIBUTING.md) · [Segurança](SECURITY.md)
 - [Sugestão de descrição e topics do GitHub](docs/portfolio/github-presentation.md)
 
-**Licença:** não há licença de uso identificada na raiz desta worktree. Nenhuma licença foi atribuída nesta revisão; a escolha depende do titular. Não presumir permissão ampla de reutilização a partir da visibilidade do código.
+**Licença:** [MIT](LICENSE) — Copyright (c) 2026 Enzo Ribas.
