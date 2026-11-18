@@ -95,21 +95,46 @@ describe.skipIf(process.env.INTEGRATION !== "1")(
           (await send({ ...input, graph: badTopology })).json().issues[0].code,
         ).toBe("invalid_topology");
         const created = await send(input);
+        expect(created.statusCode).toBe(201);
         const id = created.json().id;
         const { scope: _scope, ...update } = input;
         void _scope;
         const put = (payload: Record<string, unknown>) =>
           app.inject({ method: "PUT", url: `/automations/${id}`, payload });
+        const staleBadPort = await put({
+          ...update,
+          graph: badPort,
+          active: false,
+          expectedRevision: 99,
+        });
+        expect(staleBadPort.statusCode).toBe(409);
+        expect(staleBadPort.json()).toEqual({ error: "revision_conflict" });
         expect(
           (
-            await put({
-              ...update,
-              graph: badPort,
-              active: false,
-              expectedRevision: 99,
-            })
-          ).json().issues[0].code,
-        ).toBe("invalid_source_port");
+            await pool.query(
+              "SELECT current_revision FROM automation_definitions WHERE id=$1",
+              [id],
+            )
+          ).rows[0].current_revision,
+        ).toBe(1);
+        expect(
+          (
+            await pool.query(
+              "SELECT count(*)::int AS n FROM automation_definition_revisions WHERE automation_id=$1",
+              [id],
+            )
+          ).rows[0].n,
+        ).toBe(1);
+        const currentBadPort = await put({
+          ...update,
+          graph: badPort,
+          active: false,
+          expectedRevision: 1,
+        });
+        expect(currentBadPort.statusCode).toBe(400);
+        expect(currentBadPort.json().issues[0].code).toBe(
+          "invalid_source_port",
+        );
         expect(
           (
             await put({
@@ -202,14 +227,16 @@ describe.skipIf(process.env.INTEGRATION !== "1")(
         expect((await off.inject({ method: "GET", url })).json().graph).toEqual(
           graph,
         );
-        expect(
+        const listed = (
           (
             await off.inject({
               method: "GET",
               url: "/automations?scope=conditions",
             })
-          ).json().items[0].graph,
-        ).toEqual(graph);
+          ).json().items as { id: string; graph: unknown }[]
+        ).find((item) => item.id === id);
+        expect(listed).toBeDefined();
+        expect(listed?.graph).toEqual(graph);
         const { scope: _scope, ...update } = input;
         void _scope;
         expect(

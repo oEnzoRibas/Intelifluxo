@@ -1,0 +1,22 @@
+node_modules/
+dist/
+coverage/
+*.log
+.env
+.env.local
+intelifluxo.local.json
+
+# Private tool configuration and local credentials
+.env.*
+!.env.example
+opencode.json
+opencode.jsonc
+*.local.json
+*.pem
+*.key
+*.pfx
+*.p12
+*.dump
+*.sql.gz
+.DS_Store
+Thumbs.db

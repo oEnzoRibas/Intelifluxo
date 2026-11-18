@@ -1,0 +1,35 @@
+{
+  "checkpoint": "2026-11-17",
+  "scope": "local working tree; not remote CI",
+  "results": [
+    {
+      "suite": "portfolio-frontend",
+      "passed": 307,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "portfolio-backend-isolated",
+      "passed": 949,
+      "failed": 0,
+      "skipped": 61
+    }
+  ],
+  "integration": {
+    "command": "npm run test:integration",
+    "files": 8,
+    "passed": 34,
+    "failed": 0
+  },
+  "initialBackendRun": {
+    "passed": 948,
+    "failed": 1,
+    "reason": "Supervisor port 3210 already occupied by local demonstration; rerun passed after stopping it."
+  },
+  "documentationPreview": {
+    "markdown": "rendered locally",
+    "mermaidSvgCount": 3,
+    "screenshotsLoaded": 3,
+    "githubRemoteRender": "not performed"
+  }
+}

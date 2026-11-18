@@ -49,12 +49,23 @@ describe("summary contract", () => {
         ],
         nextCursor: null,
       },
-      { items: [{ ...item, workflowVersion: 3 }], nextCursor: null },
+      { items: [{ ...item, workflowVersion: 0 }], nextCursor: null },
       { items: [{ ...item, revision: 2147483648 }], nextCursor: null },
       { items: [{ ...item, extra: 1 }], nextCursor: null },
       { items: [...fullItems, item], nextCursor: null },
     ])
       expect(() => parseSummaryPage(value)).toThrow();
+  });
+  it("retains future versions alongside supported summaries", () => {
+    const future = {
+      ...item,
+      id: "00000000-0000-0000-0000-000000000002",
+      schemaVersion: 4,
+      workflowVersion: 4,
+    };
+    expect(
+      parseSummaryPage({ items: [item, future], nextCursor: null }).items,
+    ).toEqual([item, future]);
   });
   it("requires a continuation cursor to equal the final returned id", () => {
     expect(() => parseSummaryPage({ items: [], nextCursor: id })).toThrow();
@@ -92,6 +103,23 @@ describe("summary contract", () => {
   });
 });
 describe("dashboard", () => {
+  it("applies the visible draft when status changes and resets the cursor", async () => {
+    const fetcher = vi.fn().mockImplementation(() => response(continuation));
+    vi.stubGlobal("fetch", fetcher);
+    render(<AutomationDashboard visible onOpen={() => {}} />);
+    await screen.findAllByText("Receipt");
+    fireEvent.click(screen.getByRole("button", { name: "Próxima" }));
+    await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
+    await screen.findAllByText("Receipt");
+    fireEvent.change(screen.getByLabelText("Buscar por nome ou contexto"), {
+      target: { value: "draft" },
+    });
+    fireEvent.click(screen.getByLabelText("Desativadas"));
+    await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(3));
+    expect(String(fetcher.mock.calls[2][0])).toContain("q=draft");
+    expect(String(fetcher.mock.calls[2][0])).toContain("active=false");
+    expect(String(fetcher.mock.calls[2][0])).not.toContain("cursor=");
+  });
   it("discards a late response after changing status", async () => {
     let resolveOld!: (value: Response) => void;
     const fetcher = vi
@@ -107,7 +135,7 @@ describe("dashboard", () => {
       );
     vi.stubGlobal("fetch", fetcher);
     render(<AutomationDashboard visible onOpen={() => {}} />);
-    fireEvent.click(screen.getByLabelText("Inactive"));
+    fireEvent.click(screen.getByLabelText("Desativadas"));
     await screen.findAllByText("New");
     resolveOld(
       await response({ items: [{ ...item, name: "Stale" }], nextCursor: null }),
@@ -131,30 +159,28 @@ describe("dashboard", () => {
     await screen.findAllByText("other");
     expect(
       screen.getAllByRole("link", {
-        name: /Open Builder for Receipt, demo/,
+        name: /Receipt — demo/,
       })[0],
     ).toHaveAttribute("href", `#automations/${id}`);
-    fireEvent.change(screen.getByLabelText("Search name or scope"), {
+    fireEvent.change(screen.getByLabelText("Buscar por nome ou contexto"), {
       target: { value: "demo" },
     });
     fireEvent.submit(
-      screen.getByLabelText("Search name or scope").closest("form")!,
+      screen.getByLabelText("Buscar por nome ou contexto").closest("form")!,
     );
     await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
     expect(String(fetcher.mock.calls[1][0])).toContain("q=demo");
     await screen.findAllByText("Receipt");
-    fireEvent.click(screen.getByLabelText("Active"));
+    fireEvent.click(screen.getByLabelText("Ativas"));
     await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(3));
     expect(String(fetcher.mock.calls[2][0])).toContain("active=true");
     await screen.findAllByText("Receipt");
-    fireEvent.click(screen.getByRole("button", { name: "Next" }));
-    await screen.findByText("No more current matches");
-    expect(
-      screen.getByRole("heading", { name: "Current results" }),
-    ).toHaveFocus();
-    fireEvent.click(screen.getByRole("button", { name: "Previous" }));
+    fireEvent.click(screen.getByRole("button", { name: "Próxima" }));
+    await screen.findByText("Fim dos resultados");
+    expect(screen.getByRole("heading", { name: "Resultados" })).toHaveFocus();
+    fireEvent.click(screen.getByRole("button", { name: "Anterior" }));
     await screen.findAllByText("Receipt");
-    expect(screen.getByRole("button", { name: "Next" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Próxima" })).toBeDisabled();
   });
   it("distinguishes error, retry and empty and validates search", async () => {
     const fetcher = vi
@@ -164,20 +190,20 @@ describe("dashboard", () => {
     vi.stubGlobal("fetch", fetcher);
     render(<AutomationDashboard visible onOpen={() => {}} />);
     await screen.findByRole("alert");
-    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
-    await screen.findByText("No automations yet");
-    const input = screen.getByLabelText("Search name or scope");
+    fireEvent.click(screen.getByRole("button", { name: "Tentar novamente" }));
+    await screen.findByText("Crie sua primeira automação");
+    const input = screen.getByLabelText("Buscar por nome ou contexto");
     fireEvent.change(input, { target: { value: "   " } });
     fireEvent.submit(input.closest("form")!);
     expect(input).toHaveFocus();
     expect(fetcher).toHaveBeenCalledTimes(2);
     expect(
-      within(screen.getByRole("region", { name: "Current results" })).getByText(
-        "No automations yet",
+      within(screen.getByRole("region", { name: "Resultados" })).getByText(
+        "Crie sua primeira automação",
       ),
     ).toBeInTheDocument();
   });
-  it("focuses results after failed Next and Retry without stealing initial focus", async () => {
+  it("focuses results after failed Próxima and Tentar novamente without stealing initial focus", async () => {
     const fetcher = vi
       .fn()
       .mockImplementationOnce(() => response(continuation))
@@ -185,17 +211,17 @@ describe("dashboard", () => {
       .mockImplementationOnce(() => response({}, 503));
     vi.stubGlobal("fetch", fetcher);
     render(<AutomationDashboard visible onOpen={() => {}} />);
-    const search = screen.getByLabelText("Search name or scope");
+    const search = screen.getByLabelText("Buscar por nome ou contexto");
     search.focus();
     await screen.findAllByText("Receipt");
     expect(search).toHaveFocus();
-    const next = screen.getByRole("button", { name: "Next" });
+    const next = screen.getByRole("button", { name: "Próxima" });
     next.focus();
     fireEvent.click(next);
     await screen.findByRole("alert");
-    const heading = screen.getByRole("heading", { name: "Current results" });
+    const heading = screen.getByRole("heading", { name: "Resultados" });
     expect(heading).toHaveFocus();
-    const retry = screen.getByRole("button", { name: "Retry" });
+    const retry = screen.getByRole("button", { name: "Tentar novamente" });
     retry.focus();
     fireEvent.click(retry);
     await screen.findByRole("alert");
@@ -207,7 +233,7 @@ describe("dashboard", () => {
       vi.fn(() => response({}, 503)),
     );
     render(<AutomationDashboard visible onOpen={() => {}} />);
-    const search = screen.getByLabelText("Search name or scope");
+    const search = screen.getByLabelText("Buscar por nome ou contexto");
     search.focus();
     await screen.findByRole("alert");
     expect(search).toHaveFocus();

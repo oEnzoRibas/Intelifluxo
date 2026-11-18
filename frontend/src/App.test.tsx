@@ -6,7 +6,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import App from "./App";
 import { getEvent } from "./api";
 const id = "12345678-1234-1234-1234-123456789abc";
@@ -40,6 +40,7 @@ function reply(data: unknown, status = 200) {
     }),
   );
 }
+beforeEach(() => window.history.replaceState(null, "", "#explorer"));
 afterEach(() => {
   vi.unstubAllGlobals();
   window.history.replaceState(null, "", window.location.pathname);
@@ -123,22 +124,18 @@ it.each([
     }
   },
 );
-it("shows profile, idle and unavailable dependency states", async () => {
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(() => reply(profile)),
-  );
+it("provides accessible navigation and keeps diagnostics separate", () => {
   render(<App />);
   expect(
-    screen.getByRole("link", { name: "Skip to main content" }),
+    screen.getByRole("link", { name: "Ir para o conteúdo principal" }),
   ).toHaveAttribute("href", "#main");
   expect(
-    screen.getByRole("navigation", { name: "Primary" }),
+    screen.getByRole("navigation", { name: "Navegação principal" }),
   ).toBeInTheDocument();
-  expect(screen.getByText("No event selected.")).toBeInTheDocument();
-  expect(screen.getAllByText("Unavailable")).toHaveLength(2);
-  expect(await screen.findByText("local-development-only")).toBeInTheDocument();
-  expect(screen.getByText("no retries")).toBeInTheDocument();
+  expect(screen.getByText("No event selected.")).toBeVisible();
+  expect(
+    screen.queryByText("Configurações · indisponível"),
+  ).not.toBeInTheDocument();
 });
 it("validates an ID and displays an event response", async () => {
   const fetcher = vi.fn((url: string) =>
@@ -340,6 +337,7 @@ it.each(["navigate", "clear"])(
         "fetch",
         vi.fn((url: string, options: RequestInit) => {
           if (url.endsWith("/status")) return reply(profile);
+          if (url.includes("/overview?")) return reply({});
           signal = options.signal as AbortSignal;
           return pending;
         }),
@@ -353,8 +351,8 @@ it.each(["navigate", "clear"])(
       if (action === "clear")
         await user.clear(screen.getByLabelText("Event ID"));
       else {
-        await user.click(screen.getByRole("link", { name: "Overview" }));
-        await screen.findByRole("heading", { name: "Operational Overview" });
+        await user.click(screen.getByRole("link", { name: "Visão geral" }));
+        await screen.findByRole("heading", { name: "Visão geral" });
       }
       expect(signal.aborted).toBe(true);
       await act(async () => {
@@ -362,10 +360,17 @@ it.each(["navigate", "clear"])(
           resolve(new Response(JSON.stringify(detail)));
         else reject(new Error("late"));
       });
-      expect(screen.getByText("No event selected.")).toBeInTheDocument();
+      if (action === "clear")
+        expect(screen.getByText("No event selected.")).toBeInTheDocument();
       expect(screen.queryByText("accepted")).not.toBeInTheDocument();
       expect(screen.queryByText(/Event lookup failed/)).not.toBeInTheDocument();
       if (action === "navigate") {
+        if (
+          !screen
+            .getByText("Avançado / Diagnóstico")
+            .parentElement?.hasAttribute("open")
+        )
+          fireEvent.click(screen.getByText("Avançado / Diagnóstico"));
         await user.click(screen.getByRole("link", { name: "Event Explorer" }));
         expect(
           await screen.findByText("No event selected."),
@@ -499,43 +504,6 @@ it("shows lookup loading and ignores an older response even if fetch ignores abo
   expect(screen.queryByText("old")).not.toBeInTheDocument();
 });
 
-it.each([true, false])(
-  "keeps retry keyboard focus through loading and outcome (success: %s)",
-  async (success) => {
-    let resolve!: (response: Response) => void;
-    const pending = new Promise<Response>((r) => {
-      resolve = r;
-    });
-    vi.stubGlobal(
-      "fetch",
-      vi
-        .fn()
-        .mockResolvedValueOnce(new Response("{}"))
-        .mockReturnValueOnce(pending),
-    );
-    render(<App />);
-    const user = userEvent.setup();
-    const retry = await screen.findByRole("button", { name: "Retry" });
-    await user.tab();
-    while (document.activeElement !== retry) await user.tab();
-    await user.keyboard("{Enter}");
-    expect(retry).toHaveFocus();
-    expect(retry).toHaveAttribute("aria-disabled", "true");
-    expect(screen.getByText("Loading service profile…")).toBeInTheDocument();
-    await act(async () =>
-      resolve(new Response(JSON.stringify(success ? profile : {}))),
-    );
-    await waitFor(() =>
-      expect(retry).toHaveAttribute("aria-disabled", "false"),
-    );
-    expect(retry).toHaveFocus();
-    expect(
-      screen.getByText(
-        success ? "local-development-only" : /Service profile unavailable/,
-      ),
-    ).toBeInTheDocument();
-  },
-);
 it("shows not found and lookup API failure", async () => {
   let status = 404;
   vi.stubGlobal(
@@ -555,26 +523,34 @@ it("shows not found and lookup API failure", async () => {
   await user.click(screen.getByRole("button", { name: "Look up event" }));
   expect(await screen.findByText(/Event lookup failed/)).toBeInTheDocument();
 });
-it("shows loading, retry and rejects malformed responses", async () => {
-  let resolve!: (value: Response) => void;
-  const pending = new Promise<Response>((r) => {
-    resolve = r;
-  });
+it("shows overview loading and lets the user retry a failed observation", async () => {
+  window.history.replaceState(null, "", "#overview");
+  let finish!: (response: Response) => void;
   const fetcher = vi
     .fn()
-    .mockReturnValueOnce(pending)
-    .mockImplementation(() => reply(profile));
+    .mockImplementationOnce(
+      () =>
+        new Promise<Response>((resolve) => {
+          finish = resolve;
+        }),
+    )
+    .mockResolvedValue(new Response("{}"));
   vi.stubGlobal("fetch", fetcher);
   render(<App />);
-  expect(screen.getByText("Loading service profile…")).toBeInTheDocument();
-  resolve(new Response("{}"));
-  expect(
-    await screen.findByText(/Service profile unavailable/),
-  ).toBeInTheDocument();
-  await userEvent.click(screen.getByRole("button", { name: "Retry" }));
-  await waitFor(() =>
-    expect(screen.getByText("local-development-only")).toBeInTheDocument(),
+  expect(screen.getByRole("status")).toHaveTextContent(
+    "Carregando dados do período",
   );
+  await act(async () => {
+    finish(new Response("{}"));
+  });
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "Não foi possível carregar dados atuais",
+  );
+  await userEvent.click(
+    screen.getByRole("button", { name: "Tentar novamente" }),
+  );
+  await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
+  expect(fetcher.mock.calls[0][0]).toContain("/overview?period=24h");
 });
 
 it("navigates between overview and explorer and preserves the lookup in memory", async () => {
@@ -584,6 +560,12 @@ it("navigates between overview and explorer and preserves the lookup in memory",
   );
   render(<App />);
   const user = userEvent.setup();
+  if (
+    !screen
+      .getByText("Avançado / Diagnóstico")
+      .parentElement?.hasAttribute("open")
+  )
+    fireEvent.click(screen.getByText("Avançado / Diagnóstico"));
   await user.click(screen.getByRole("link", { name: "Event Explorer" }));
   expect(
     await screen.findByRole("heading", { name: "Event Explorer" }),
@@ -598,10 +580,16 @@ it("navigates between overview and explorer and preserves the lookup in memory",
   await user.type(screen.getByLabelText("Event ID"), id);
   await user.click(screen.getByRole("button", { name: "Look up event" }));
   expect(await screen.findByText("accepted")).toBeInTheDocument();
-  await user.click(screen.getByRole("link", { name: "Overview" }));
+  await user.click(screen.getByRole("link", { name: "Visão geral" }));
   expect(
-    await screen.findByRole("heading", { name: "Operational Overview" }),
+    await screen.findByRole("heading", { name: "Visão geral" }),
   ).toBeInTheDocument();
+  if (
+    !screen
+      .getByText("Avançado / Diagnóstico")
+      .parentElement?.hasAttribute("open")
+  )
+    fireEvent.click(screen.getByText("Avançado / Diagnóstico"));
   await user.click(screen.getByRole("link", { name: "Event Explorer" }));
   expect(await screen.findByDisplayValue(id)).toBeInTheDocument();
   expect(screen.getByText("accepted")).toBeInTheDocument();
@@ -614,16 +602,22 @@ it("returns to Overview on Back to the initial hashless URL", async () => {
     vi.fn(() => reply(profile)),
   );
   render(<App />);
+  if (
+    !screen
+      .getByText("Avançado / Diagnóstico")
+      .parentElement?.hasAttribute("open")
+  )
+    fireEvent.click(screen.getByText("Avançado / Diagnóstico"));
   await userEvent.click(screen.getByRole("link", { name: "Event Explorer" }));
   expect(
     await screen.findByRole("heading", { name: "Event Explorer" }),
   ).toBeInTheDocument();
   act(() => window.history.back());
   expect(
-    await screen.findByRole("heading", { name: "Operational Overview" }),
+    await screen.findByRole("heading", { name: "Visão geral" }),
   ).toBeInTheDocument();
   expect(window.location.hash).toBe("");
-  expect(screen.getByRole("link", { name: "Overview" })).toHaveAttribute(
+  expect(screen.getByRole("link", { name: "Visão geral" })).toHaveAttribute(
     "aria-current",
     "page",
   );

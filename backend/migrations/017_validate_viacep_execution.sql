@@ -1,0 +1,3 @@
+ALTER TABLE automation_executions VALIDATE CONSTRAINT automation_execution_result_valid_v3;
+ALTER TABLE automation_executions VALIDATE CONSTRAINT automation_execution_target_valid_v3;
+ALTER TABLE automation_executions VALIDATE CONSTRAINT automation_execution_types_valid_v3;

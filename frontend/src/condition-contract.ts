@@ -40,7 +40,7 @@ export function fieldPathValid(value: unknown): value is string {
     parts.length <= 8 &&
     parts.every(
       (part) =>
-        /^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(part) &&
+        /^[A-Za-z_][A-Za-z0-9_]{0,63}(?![\s\S])/.test(part) &&
         !["__proto__", "prototype", "constructor"].includes(part),
     )
   );
