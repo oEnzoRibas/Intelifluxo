@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { automationListRoute } from "./automation-list.js";
 import { isDeepStrictEqual } from "node:util";
 import { validateGraphV2 } from "./graph-v2.js";
+import { validateGraphV3 } from "./graph-v3.js";
 import type { FastifyInstance } from "fastify";
 import type pg from "pg";
 import { transaction } from "./db.js";
@@ -35,7 +36,7 @@ const fixed = (value: string) => ({
 });
 const fields = {
   name,
-  schemaVersion: { enum: [1, 2] },
+  schemaVersion: { enum: [1, 2, 3] },
   trigger: fixed("receipt.v1"),
   action: fixed("record-receipt.v1"),
 };
@@ -157,7 +158,50 @@ const graphV2Schema = {
     },
   },
 };
-const graphUnionSchema = { anyOf: [graphSchema, graphV2Schema] };
+const graphV3Schema = {
+  ...graphV2Schema,
+  properties: {
+    ...graphV2Schema.properties,
+    version: { const: 3 },
+    nodes: {
+      ...graphV2Schema.properties.nodes,
+      items: {
+        ...graphV2Schema.properties.nodes.items,
+        properties: {
+          ...graphV2Schema.properties.nodes.items.properties,
+          config: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              cep: {
+                type: "object",
+                additionalProperties: false,
+                properties: {
+                  source: { type: "string" },
+                  value: { type: "string" },
+                  fieldPath: { type: "string" },
+                },
+              },
+              input: {
+                type: "object",
+                additionalProperties: false,
+                properties: {
+                  source: { type: "string" },
+                  nodeId: { type: "string" },
+                  fieldPath: { type: "string" },
+                },
+              },
+              operator: { type: "string" },
+              expectedType: { type: "string" },
+              expectedValue: {},
+            },
+          },
+        },
+      },
+    },
+  },
+};
+const graphUnionSchema = { anyOf: [graphSchema, graphV2Schema, graphV3Schema] };
 export const createSchema = {
   type: "object",
   additionalProperties: false,
@@ -222,15 +266,19 @@ export const response = {
   },
 };
 type DefinitionGraph =
-  Graph | { version: 2; nodes: unknown[]; edges: unknown[] };
+  | Graph
+  | { version: 2; nodes: unknown[]; edges: unknown[] }
+  | { version: 3; nodes: unknown[]; edges: unknown[] };
 const versionOf = (graph: unknown): unknown =>
   graph && typeof graph === "object"
     ? (graph as { version?: unknown }).version
     : undefined;
 function shape(graph: unknown, trigger: string, action: string) {
-  return versionOf(graph) === 2
-    ? validateGraphV2(graph, trigger, action, true)
-    : graphShape(graph);
+  return versionOf(graph) === 3
+    ? validateGraphV3(graph, trigger, action, true).slice(0, 50)
+    : versionOf(graph) === 2
+      ? validateGraphV2(graph, trigger, action, true)
+      : graphShape(graph);
 }
 function semantics(
   graph: DefinitionGraph,
@@ -238,14 +286,16 @@ function semantics(
   trigger: string,
   action: string,
 ) {
-  return graph.version === 2
-    ? validateGraphV2(graph, trigger, action)
-    : graphSemantics(graph, active, trigger, action);
+  return graph.version === 3
+    ? validateGraphV3(graph, trigger, action).slice(0, 50)
+    : graph.version === 2
+      ? validateGraphV2(graph, trigger, action)
+      : graphSemantics(graph, active, trigger, action);
 }
 const issue = (code: string, path = "/graph") => [{ code, path }];
 type Input = {
   name: string;
-  schemaVersion: 1 | 2;
+  schemaVersion: 1 | 2 | 3;
   trigger: { type: "receipt.v1" };
   action: { type: "record-receipt.v1" };
   graph?: DefinitionGraph;
@@ -305,6 +355,8 @@ export function automationRoutes(
   app: FastifyInstance,
   pool: pg.Pool,
   conditionsEnabled = false,
+  viacepEnabled = false,
+  viacepExternalEnabled = false,
 ) {
   automationListRoute(app, pool);
   // Graph shape is validated separately to preserve graph-specific error codes.
@@ -316,7 +368,7 @@ export function automationRoutes(
     "/automations",
     { schema: { body: bodySchema(createSchema), response: { 201: response } } },
     async (request, reply) => {
-      if (request.body.schemaVersion === 2 && request.body.graph === undefined)
+      if (request.body.schemaVersion >= 2 && request.body.graph === undefined)
         return reply.code(400).send({
           error: "validation_failed",
           issues: issue("graph_required"),
@@ -345,10 +397,15 @@ export function automationRoutes(
           error: "validation_failed",
           issues: issue("execution_schema_mismatch"),
         });
-      if (graph.version === 2 && !conditionsEnabled)
+      if (graph.version >= 2 && !conditionsEnabled)
         return reply.code(400).send({
           error: "validation_failed",
           issues: issue("conditions_disabled"),
+        });
+      if (graph.version === 3 && !viacepEnabled)
+        return reply.code(400).send({
+          error: "validation_failed",
+          issues: issue("viacep_disabled"),
         });
       const id = randomUUID();
       const row = await transaction(pool, async (client) => {
@@ -406,15 +463,6 @@ export function automationRoutes(
       },
     },
     async (request, reply) => {
-      if (request.body.graph !== undefined) {
-        const issues = shape(
-          request.body.graph,
-          request.body.trigger.type,
-          request.body.action.type,
-        );
-        if (issues.length)
-          return reply.code(400).send({ error: "validation_failed", issues });
-      }
       const result = await transaction(pool, async (client) => {
         const current = await client.query<{ current_revision: number }>(
           "SELECT current_revision FROM automation_definitions WHERE id=$1 FOR UPDATE",
@@ -428,10 +476,18 @@ export function automationRoutes(
         ]);
         if (
           request.body.graph === undefined &&
-          (request.body.schemaVersion === 2 ||
-            existing.rows[0].schema_version === 2)
+          (request.body.schemaVersion >= 2 ||
+            existing.rows[0].schema_version >= 2)
         )
           return { issues: issue("graph_required") };
+        if (request.body.graph !== undefined) {
+          const issues = shape(
+            request.body.graph,
+            request.body.trigger.type,
+            request.body.action.type,
+          );
+          if (issues.length) return { issues };
+        }
         const graph =
           request.body.graph ?? existing.rows[0].graph ?? defaultGraph();
         const issues = semantics(
@@ -444,19 +500,32 @@ export function automationRoutes(
         if (graph.version !== request.body.schemaVersion)
           return { issues: issue("execution_schema_mismatch") };
         if (
-          existing.rows[0].schema_version === 2 &&
-          graph.version === 1 &&
+          graph.version < existing.rows[0].schema_version &&
           request.body.active
         )
           return { issues: issue("execution_schema_mismatch") };
         if (
           !conditionsEnabled &&
-          (graph.version === 2 || existing.rows[0].schema_version === 2) &&
+          (graph.version >= 2 || existing.rows[0].schema_version >= 2) &&
           (request.body.active ||
             !isDeepStrictEqual(graph, existing.rows[0].graph) ||
             graph.version !== existing.rows[0].schema_version)
         )
           return { issues: issue("conditions_disabled") };
+        if (
+          !viacepEnabled &&
+          (graph.version === 3 || existing.rows[0].schema_version === 3) &&
+          (request.body.active ||
+            !isDeepStrictEqual(graph, existing.rows[0].graph) ||
+            graph.version !== existing.rows[0].schema_version)
+        )
+          return { issues: issue("viacep_disabled") };
+        if (
+          graph.version === 3 &&
+          request.body.active &&
+          !viacepExternalEnabled
+        )
+          return { issues: issue("viacep_external_execution_disabled") };
         const next = request.body.expectedRevision + 1;
         await insertRevision(
           client,

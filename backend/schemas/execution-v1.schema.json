@@ -23,40 +23,66 @@
         "result"
       ],
       "properties": {
-        "id": { "$ref": "#/$defs/uuid" },
-        "eventId": { "$ref": "#/$defs/uuid" },
-        "automationId": { "$ref": "#/$defs/uuid" },
-        "revision": { "type": "integer", "minimum": 1 },
-        "schemaVersion": { "type": "integer" },
+        "id": {
+          "$ref": "#/$defs/uuid"
+        },
+        "eventId": {
+          "$ref": "#/$defs/uuid"
+        },
+        "automationId": {
+          "$ref": "#/$defs/uuid"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "schemaVersion": {
+          "enum": [1, 2, 3]
+        },
         "trigger": {
           "type": "object",
           "required": ["type"],
           "additionalProperties": false,
-          "properties": { "type": { "type": "string" } }
+          "properties": {
+            "type": {
+              "type": "string"
+            }
+          }
         },
         "action": {
           "type": "object",
           "required": ["type"],
           "additionalProperties": false,
-          "properties": { "type": { "type": "string" } }
+          "properties": {
+            "type": {
+              "type": "string"
+            }
+          }
         },
-        "createdAt": { "type": "string", "format": "date-time" },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
         "status": {
           "enum": [
             "accepted",
             "retry_scheduled",
             "retry_released",
             "completed",
-            "blocked"
+            "blocked",
+            "ignored"
           ]
         },
         "retry": {
           "oneOf": [
-            { "type": "null" },
+            {
+              "type": "null"
+            },
             {
               "type": "object",
               "additionalProperties": false,
               "required": [
+                "scope",
                 "generation",
                 "attempt",
                 "outcome",
@@ -65,32 +91,900 @@
                 "reason"
               ],
               "properties": {
-                "generation": { "type": "integer" },
-                "attempt": { "type": "integer" },
-                "outcome": { "type": "string" },
-                "delayMs": { "type": ["integer", "null"] },
-                "nextEligibleAt": { "type": ["string", "null"] },
-                "reason": { "type": ["string", "null"] }
+                "generation": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "attempt": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "outcome": {
+                  "type": "string",
+                  "enum": ["success", "transient", "permanent", "unknown"]
+                },
+                "delayMs": {
+                  "type": ["integer", "null"],
+                  "minimum": 1
+                },
+                "nextEligibleAt": {
+                  "anyOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  ]
+                },
+                "reason": {
+                  "type": ["string", "null"],
+                  "enum": [null, "permanent", "unknown", "exhausted"]
+                },
+                "scope": {
+                  "const": "event"
+                }
               }
             }
           ]
         },
         "result": {
           "oneOf": [
-            { "type": "null" },
             {
-              "type": "object",
-              "additionalProperties": false,
-              "required": ["kind", "eventId", "message"],
-              "properties": {
-                "kind": { "const": "local-receipt.v1" },
-                "eventId": { "$ref": "#/$defs/uuid" },
-                "message": { "type": "string" }
-              }
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/receipt"
+            },
+            {
+              "$ref": "#/$defs/conditionResult"
+            },
+            {
+              "$ref": "#/$defs/viacepResult"
             }
           ]
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "schemaVersion": {
+                "const": 1
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "result": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/$defs/receipt"
+                  }
+                ]
+              }
+            },
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "status": {
+                      "const": "accepted"
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "result": {
+                      "type": "null"
+                    },
+                    "retry": {
+                      "type": "null"
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "status": {
+                      "const": "completed"
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "result": {
+                      "$ref": "#/$defs/receipt"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "schemaVersion": {
+                "const": 2
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "result": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/$defs/conditionResult"
+                  }
+                ]
+              }
+            },
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "status": {
+                      "const": "accepted"
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "result": {
+                      "type": "null"
+                    },
+                    "retry": {
+                      "type": "null"
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "status": {
+                      "const": "completed"
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "result": {
+                      "$ref": "#/$defs/conditionResult"
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "status": {
+                      "const": "completed"
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "result": {
+                      "allOf": [
+                        {
+                          "type": "object"
+                        },
+                        {
+                          "properties": {
+                            "action": {
+                              "properties": {
+                                "status": {
+                                  "enum": ["executed"]
+                                }
+                              }
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "status": {
+                      "const": "ignored"
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "result": {
+                      "allOf": [
+                        {
+                          "type": "object"
+                        },
+                        {
+                          "properties": {
+                            "action": {
+                              "properties": {
+                                "status": {
+                                  "enum": ["ignored"]
+                                }
+                              }
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "status": {
+                      "const": "retry_scheduled"
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "result": {
+                      "oneOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "allOf": [
+                            {
+                              "type": "object"
+                            },
+                            {
+                              "properties": {
+                                "action": {
+                                  "properties": {
+                                    "status": {
+                                      "enum": ["pending"]
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "status": {
+                      "const": "blocked"
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "result": {
+                      "oneOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "allOf": [
+                            {
+                              "type": "object"
+                            },
+                            {
+                              "properties": {
+                                "action": {
+                                  "properties": {
+                                    "status": {
+                                      "enum": ["not_executed"]
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "schemaVersion": {
+                "const": 3
+              }
+            }
+          },
+          "then": {
+            "oneOf": [
+              {
+                "properties": {
+                  "status": {
+                    "const": "accepted"
+                  },
+                  "result": {
+                    "type": "null"
+                  },
+                  "retry": {
+                    "type": "null"
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "status": {
+                    "enum": ["completed"]
+                  },
+                  "result": {
+                    "allOf": [
+                      {
+                        "allOf": [
+                          {
+                            "$ref": "#/$defs/viacepResult"
+                          },
+                          {
+                            "properties": {
+                              "action": {
+                                "properties": {
+                                  "status": {
+                                    "enum": ["executed"]
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        ]
+                      },
+                      {}
+                    ]
+                  },
+                  "retry": {
+                    "allOf": [
+                      {
+                        "type": "object"
+                      },
+                      {
+                        "properties": {
+                          "outcome": {
+                            "const": "success"
+                          },
+                          "delayMs": {
+                            "type": "null"
+                          },
+                          "nextEligibleAt": {
+                            "type": "null"
+                          },
+                          "reason": {
+                            "const": null
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "status": {
+                    "enum": ["retry_scheduled"]
+                  },
+                  "result": {
+                    "allOf": [
+                      {
+                        "allOf": [
+                          {
+                            "$ref": "#/$defs/viacepResult"
+                          },
+                          {
+                            "properties": {
+                              "action": {
+                                "properties": {
+                                  "status": {
+                                    "enum": ["pending"]
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        ]
+                      },
+                      {}
+                    ]
+                  },
+                  "retry": {
+                    "allOf": [
+                      {
+                        "type": "object"
+                      },
+                      {
+                        "properties": {
+                          "outcome": {
+                            "const": "transient"
+                          },
+                          "delayMs": {
+                            "type": "integer",
+                            "minimum": 1
+                          },
+                          "nextEligibleAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "reason": {
+                            "const": null
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "status": {
+                    "enum": ["retry_released"]
+                  },
+                  "result": {
+                    "allOf": [
+                      {
+                        "allOf": [
+                          {
+                            "$ref": "#/$defs/viacepResult"
+                          },
+                          {
+                            "properties": {
+                              "action": {
+                                "properties": {
+                                  "status": {
+                                    "enum": ["pending"]
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        ]
+                      },
+                      {}
+                    ]
+                  },
+                  "retry": {
+                    "allOf": [
+                      {
+                        "type": "object"
+                      },
+                      {
+                        "properties": {
+                          "outcome": {
+                            "const": "transient"
+                          },
+                          "delayMs": {
+                            "type": "integer",
+                            "minimum": 1
+                          },
+                          "nextEligibleAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "reason": {
+                            "const": null
+                          }
+                        }
+                      },
+                      {
+                        "properties": {
+                          "generation": {
+                            "minimum": 1
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "status": {
+                    "enum": ["ignored"]
+                  },
+                  "result": {
+                    "allOf": [
+                      {
+                        "allOf": [
+                          {
+                            "$ref": "#/$defs/viacepResult"
+                          },
+                          {
+                            "properties": {
+                              "action": {
+                                "properties": {
+                                  "status": {
+                                    "enum": ["ignored"]
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        ]
+                      },
+                      {}
+                    ]
+                  },
+                  "retry": {
+                    "oneOf": [
+                      {
+                        "allOf": [
+                          {
+                            "type": "object"
+                          },
+                          {
+                            "properties": {
+                              "outcome": {
+                                "const": "success"
+                              },
+                              "delayMs": {
+                                "type": "null"
+                              },
+                              "nextEligibleAt": {
+                                "type": "null"
+                              },
+                              "reason": {
+                                "const": null
+                              }
+                            }
+                          }
+                        ]
+                      },
+                      {
+                        "allOf": [
+                          {
+                            "type": "object"
+                          },
+                          {
+                            "properties": {
+                              "outcome": {
+                                "const": "transient"
+                              },
+                              "delayMs": {
+                                "type": "integer",
+                                "minimum": 1
+                              },
+                              "nextEligibleAt": {
+                                "type": "string",
+                                "format": "date-time"
+                              },
+                              "reason": {
+                                "const": null
+                              }
+                            }
+                          }
+                        ]
+                      },
+                      {
+                        "allOf": [
+                          {
+                            "type": "object"
+                          },
+                          {
+                            "properties": {
+                              "outcome": {
+                                "const": "permanent"
+                              },
+                              "delayMs": {
+                                "type": "null"
+                              },
+                              "nextEligibleAt": {
+                                "type": "null"
+                              },
+                              "reason": {
+                                "const": "permanent"
+                              }
+                            }
+                          }
+                        ]
+                      },
+                      {
+                        "allOf": [
+                          {
+                            "type": "object"
+                          },
+                          {
+                            "properties": {
+                              "outcome": {
+                                "const": "unknown"
+                              },
+                              "delayMs": {
+                                "type": "null"
+                              },
+                              "nextEligibleAt": {
+                                "type": "null"
+                              },
+                              "reason": {
+                                "const": "unknown"
+                              }
+                            }
+                          }
+                        ]
+                      },
+                      {
+                        "allOf": [
+                          {
+                            "type": "object"
+                          },
+                          {
+                            "properties": {
+                              "outcome": {
+                                "const": "transient"
+                              },
+                              "delayMs": {
+                                "type": "null"
+                              },
+                              "nextEligibleAt": {
+                                "type": "null"
+                              },
+                              "reason": {
+                                "const": "exhausted"
+                              }
+                            }
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "status": {
+                    "enum": ["blocked"]
+                  },
+                  "result": {
+                    "allOf": [
+                      {
+                        "allOf": [
+                          {
+                            "$ref": "#/$defs/viacepResult"
+                          },
+                          {
+                            "properties": {
+                              "action": {
+                                "properties": {
+                                  "status": {
+                                    "enum": ["not_executed"]
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        ]
+                      },
+                      {
+                        "properties": {
+                          "failure": {
+                            "anyOf": [
+                              {
+                                "properties": {
+                                  "classification": {
+                                    "const": "permanent"
+                                  }
+                                }
+                              },
+                              {
+                                "properties": {
+                                  "code": {
+                                    "const": "unsupported_execution_contract"
+                                  },
+                                  "classification": {
+                                    "const": "unknown"
+                                  }
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "retry": {
+                    "allOf": [
+                      {
+                        "type": "object"
+                      },
+                      {
+                        "properties": {
+                          "outcome": {
+                            "const": "permanent"
+                          },
+                          "delayMs": {
+                            "type": "null"
+                          },
+                          "nextEligibleAt": {
+                            "type": "null"
+                          },
+                          "reason": {
+                            "const": "permanent"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "status": {
+                    "enum": ["blocked"]
+                  },
+                  "result": {
+                    "allOf": [
+                      {
+                        "allOf": [
+                          {
+                            "$ref": "#/$defs/viacepResult"
+                          },
+                          {
+                            "properties": {
+                              "action": {
+                                "properties": {
+                                  "status": {
+                                    "enum": ["not_executed"]
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        ]
+                      },
+                      {
+                        "properties": {
+                          "failure": {
+                            "properties": {
+                              "classification": {
+                                "const": "unknown"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "retry": {
+                    "allOf": [
+                      {
+                        "type": "object"
+                      },
+                      {
+                        "properties": {
+                          "outcome": {
+                            "const": "unknown"
+                          },
+                          "delayMs": {
+                            "type": "null"
+                          },
+                          "nextEligibleAt": {
+                            "type": "null"
+                          },
+                          "reason": {
+                            "const": "unknown"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "status": {
+                    "enum": ["blocked"]
+                  },
+                  "result": {
+                    "allOf": [
+                      {
+                        "allOf": [
+                          {
+                            "$ref": "#/$defs/viacepResult"
+                          },
+                          {
+                            "properties": {
+                              "action": {
+                                "properties": {
+                                  "status": {
+                                    "enum": ["not_executed"]
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        ]
+                      },
+                      {
+                        "properties": {
+                          "failure": {
+                            "properties": {
+                              "classification": {
+                                "const": "exhausted"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "retry": {
+                    "allOf": [
+                      {
+                        "type": "object"
+                      },
+                      {
+                        "properties": {
+                          "outcome": {
+                            "const": "transient"
+                          },
+                          "delayMs": {
+                            "type": "null"
+                          },
+                          "nextEligibleAt": {
+                            "type": "null"
+                          },
+                          "reason": {
+                            "const": "exhausted"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ],
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "retry": {
+                      "type": "object"
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "retry": {
+                      "properties": {
+                        "generation": {
+                          "maximum": 9007199254740991
+                        },
+                        "attempt": {
+                          "maximum": 9007199254740991
+                        },
+                        "delayMs": {
+                          "maximum": 9007199254740991
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "$comment": "Schema validation is necessary but not sufficient: dynamic event, receipt, CEP and node equality and pinned graph correspondence require runtime validation."
     },
     "list": {
       "type": "object",
@@ -100,7 +994,9 @@
         "items": {
           "type": "array",
           "maxItems": 100,
-          "items": { "$ref": "#/$defs/execution" }
+          "items": {
+            "$ref": "#/$defs/execution"
+          }
         }
       }
     },
@@ -108,10 +1004,2089 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "eventId": { "$ref": "#/$defs/uuid" },
-        "automationId": { "$ref": "#/$defs/uuid" }
+        "eventId": {
+          "$ref": "#/$defs/uuid"
+        },
+        "automationId": {
+          "$ref": "#/$defs/uuid"
+        }
       },
-      "oneOf": [{ "required": ["eventId"] }, { "required": ["automationId"] }]
+      "oneOf": [
+        {
+          "required": ["eventId"]
+        },
+        {
+          "required": ["automationId"]
+        }
+      ]
+    },
+    "node": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}(?![\\s\\S])"
+    },
+    "receipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "eventId", "message"],
+      "properties": {
+        "kind": {
+          "const": "local-receipt.v1"
+        },
+        "eventId": {
+          "$ref": "#/$defs/uuid"
+        },
+        "message": {
+          "type": "string"
+        }
+      }
+    },
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["nodeId", "outcome", "sourcePort", "targetNodeId"],
+      "properties": {
+        "nodeId": {
+          "$ref": "#/$defs/node"
+        },
+        "outcome": {
+          "enum": ["TRUE", "FALSE"]
+        },
+        "sourcePort": {
+          "enum": ["TRUE", "FALSE"]
+        },
+        "targetNodeId": {
+          "$ref": "#/$defs/node"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "outcome": {
+                "const": "TRUE"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "sourcePort": {
+                "const": "TRUE"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "sourcePort": {
+                "const": "FALSE"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "failure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["classification", "code", "nodeId"],
+      "properties": {
+        "classification": {
+          "enum": ["permanent", "transient", "unknown", "exhausted"]
+        },
+        "code": {
+          "enum": [
+            "invalid_condition_config",
+            "invalid_condition_value",
+            "condition_type_mismatch",
+            "action_permanent",
+            "invalid_cep",
+            "viacep_not_found",
+            "viacep_http_permanent",
+            "viacep_invalid_response",
+            "viacep_security_rejected",
+            "action_transient",
+            "viacep_timeout",
+            "viacep_transport",
+            "viacep_http_transient",
+            "unsupported_execution_contract",
+            "action_unknown",
+            "viacep_unknown",
+            "retry_exhausted",
+            "event_peer_failure"
+          ]
+        },
+        "nodeId": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/node"
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "oneOf": [
+            {
+              "properties": {
+                "classification": {
+                  "const": "permanent"
+                },
+                "code": {
+                  "enum": [
+                    "invalid_condition_config",
+                    "invalid_condition_value",
+                    "condition_type_mismatch",
+                    "action_permanent",
+                    "invalid_cep",
+                    "viacep_not_found",
+                    "viacep_http_permanent",
+                    "viacep_invalid_response",
+                    "viacep_security_rejected",
+                    "event_peer_failure"
+                  ]
+                }
+              }
+            },
+            {
+              "properties": {
+                "classification": {
+                  "const": "transient"
+                },
+                "code": {
+                  "enum": [
+                    "action_transient",
+                    "viacep_timeout",
+                    "viacep_transport",
+                    "viacep_http_transient",
+                    "event_peer_failure"
+                  ]
+                }
+              }
+            },
+            {
+              "properties": {
+                "classification": {
+                  "const": "unknown"
+                },
+                "code": {
+                  "enum": [
+                    "unsupported_execution_contract",
+                    "action_unknown",
+                    "viacep_unknown",
+                    "event_peer_failure"
+                  ]
+                }
+              }
+            },
+            {
+              "properties": {
+                "classification": {
+                  "const": "exhausted"
+                },
+                "code": {
+                  "enum": ["retry_exhausted", "event_peer_failure"]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "if": {
+            "properties": {
+              "code": {
+                "const": "event_peer_failure"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "nodeId": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "legacyFailure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["classification", "code", "nodeId"],
+      "properties": {
+        "classification": {
+          "enum": ["transient", "permanent", "unknown", "exhausted"]
+        },
+        "code": {
+          "enum": [
+            "invalid_condition_config",
+            "invalid_condition_value",
+            "condition_type_mismatch",
+            "unsupported_execution_contract",
+            "action_transient",
+            "action_permanent",
+            "action_unknown",
+            "event_peer_failure",
+            "retry_exhausted"
+          ]
+        },
+        "nodeId": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/node"
+            }
+          ]
+        }
+      }
+    },
+    "executionAction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["nodeId", "status", "receipt"],
+      "properties": {
+        "nodeId": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/node"
+            }
+          ]
+        },
+        "status": {
+          "enum": ["executed", "ignored", "pending", "not_executed"]
+        },
+        "receipt": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/receipt"
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "executed"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "nodeId": {
+                "$ref": "#/$defs/node"
+              },
+              "receipt": {
+                "$ref": "#/$defs/receipt"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "receipt": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "conditionResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "eventId", "decision", "action", "failure"],
+      "properties": {
+        "kind": {
+          "const": "condition-execution.v1"
+        },
+        "eventId": {
+          "$ref": "#/$defs/uuid"
+        },
+        "decision": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/decision"
+            }
+          ]
+        },
+        "action": {
+          "$ref": "#/$defs/executionAction"
+        },
+        "failure": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/legacyFailure"
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "oneOf": [
+            {
+              "properties": {
+                "decision": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/decision"
+                    },
+                    {
+                      "properties": {
+                        "outcome": {
+                          "const": "TRUE"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "action": {
+                  "properties": {
+                    "nodeId": {
+                      "$ref": "#/$defs/node"
+                    },
+                    "status": {
+                      "const": "executed"
+                    },
+                    "receipt": {
+                      "$ref": "#/$defs/receipt"
+                    }
+                  }
+                },
+                "failure": {
+                  "type": "null"
+                }
+              }
+            },
+            {
+              "properties": {
+                "decision": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/decision"
+                    },
+                    {
+                      "properties": {
+                        "outcome": {
+                          "const": "FALSE"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "action": {
+                  "properties": {
+                    "nodeId": {
+                      "$ref": "#/$defs/node"
+                    },
+                    "status": {
+                      "const": "ignored"
+                    },
+                    "receipt": {
+                      "type": "null"
+                    }
+                  }
+                },
+                "failure": {
+                  "type": "null"
+                }
+              }
+            },
+            {
+              "properties": {
+                "decision": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/decision"
+                    },
+                    {
+                      "properties": {
+                        "outcome": {
+                          "const": "TRUE"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "action": {
+                  "properties": {
+                    "nodeId": {
+                      "$ref": "#/$defs/node"
+                    },
+                    "status": {
+                      "const": "pending"
+                    },
+                    "receipt": {
+                      "type": "null"
+                    }
+                  }
+                },
+                "failure": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/legacyFailure"
+                    },
+                    {
+                      "properties": {
+                        "classification": {
+                          "const": "transient"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "properties": {
+                "decision": {
+                  "oneOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/decision"
+                        },
+                        {
+                          "properties": {
+                            "outcome": {
+                              "const": "TRUE"
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                },
+                "action": {
+                  "properties": {
+                    "status": {
+                      "const": "not_executed"
+                    },
+                    "receipt": {
+                      "type": "null"
+                    }
+                  }
+                },
+                "failure": {
+                  "$ref": "#/$defs/legacyFailure"
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "address": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cep"],
+      "properties": {
+        "cep": {
+          "type": "string",
+          "maxLength": 1024,
+          "pattern": "^[0-9]{5}-?[0-9]{3}(?![\\s\\S])"
+        },
+        "logradouro": {
+          "type": "string",
+          "maxLength": 1024
+        },
+        "complemento": {
+          "type": "string",
+          "maxLength": 1024
+        },
+        "unidade": {
+          "type": "string",
+          "maxLength": 1024
+        },
+        "bairro": {
+          "type": "string",
+          "maxLength": 1024
+        },
+        "localidade": {
+          "type": "string",
+          "maxLength": 1024
+        },
+        "uf": {
+          "type": "string",
+          "maxLength": 1024
+        },
+        "estado": {
+          "type": "string",
+          "maxLength": 1024
+        },
+        "regiao": {
+          "type": "string",
+          "maxLength": 1024
+        },
+        "ibge": {
+          "type": "string",
+          "maxLength": 1024
+        },
+        "gia": {
+          "type": "string",
+          "maxLength": 1024
+        },
+        "ddd": {
+          "type": "string",
+          "maxLength": 1024
+        },
+        "siafi": {
+          "type": "string",
+          "maxLength": 1024
+        }
+      }
+    },
+    "lookup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["nodeId", "kind", "status", "cep", "address", "failure"],
+      "properties": {
+        "nodeId": {
+          "$ref": "#/$defs/node"
+        },
+        "kind": {
+          "const": "viacep-address-result.v1"
+        },
+        "status": {
+          "enum": ["found", "not_found", "failed"]
+        },
+        "cep": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "pattern": "^[0-9]{8}(?![\\s\\S])"
+            }
+          ]
+        },
+        "address": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/address"
+            }
+          ]
+        },
+        "failure": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/failure"
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "found"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "cep": {
+                "type": "string"
+              },
+              "address": {
+                "$ref": "#/$defs/address"
+              },
+              "failure": {
+                "type": "null"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "address": {
+                "type": "null"
+              },
+              "failure": {
+                "$ref": "#/$defs/failure"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "not_found"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "cep": {
+                "type": "string"
+              },
+              "failure": {
+                "properties": {
+                  "code": {
+                    "enum": ["viacep_not_found"]
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "failed"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "failure": {
+                "properties": {
+                  "code": {
+                    "enum": [
+                      "invalid_cep",
+                      "viacep_timeout",
+                      "viacep_transport",
+                      "viacep_http_transient",
+                      "viacep_http_permanent",
+                      "viacep_invalid_response",
+                      "viacep_security_rejected",
+                      "viacep_unknown",
+                      "retry_exhausted"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "failed"
+              },
+              "cep": {
+                "type": "null"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "failure": {
+                "properties": {
+                  "code": {
+                    "enum": ["invalid_cep"]
+                  }
+                }
+              }
+            }
+          },
+          "else": {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "failed"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "failure": {
+                  "not": {
+                    "properties": {
+                      "code": {
+                        "enum": ["invalid_cep"]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "viacepResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "eventId",
+        "lookup",
+        "decision",
+        "action",
+        "failure"
+      ],
+      "properties": {
+        "kind": {
+          "const": "viacep-condition-execution.v1"
+        },
+        "eventId": {
+          "$ref": "#/$defs/uuid"
+        },
+        "lookup": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/lookup"
+            }
+          ]
+        },
+        "decision": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/decision"
+            }
+          ]
+        },
+        "action": {
+          "$ref": "#/$defs/executionAction"
+        },
+        "failure": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/failure"
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "oneOf": [
+            {
+              "properties": {
+                "lookup": {
+                  "type": "null"
+                },
+                "decision": {
+                  "type": "null"
+                },
+                "action": {
+                  "properties": {
+                    "nodeId": {
+                      "type": "null"
+                    },
+                    "status": {
+                      "const": "not_executed"
+                    },
+                    "receipt": {
+                      "type": "null"
+                    }
+                  }
+                },
+                "failure": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/failure"
+                    },
+                    {
+                      "properties": {
+                        "code": {
+                          "enum": ["unsupported_execution_contract"]
+                        },
+                        "classification": {
+                          "enum": ["unknown"]
+                        },
+                        "nodeId": {
+                          "type": "null"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "properties": {
+                "lookup": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/lookup"
+                    },
+                    {
+                      "properties": {
+                        "status": {
+                          "const": "found"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "decision": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/decision"
+                    },
+                    {
+                      "properties": {
+                        "outcome": {
+                          "const": "TRUE"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "action": {
+                  "properties": {
+                    "nodeId": {
+                      "$ref": "#/$defs/node"
+                    },
+                    "status": {
+                      "const": "executed"
+                    },
+                    "receipt": {
+                      "$ref": "#/$defs/receipt"
+                    }
+                  }
+                },
+                "failure": {
+                  "type": "null"
+                }
+              }
+            },
+            {
+              "properties": {
+                "lookup": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/lookup"
+                    },
+                    {
+                      "properties": {
+                        "status": {
+                          "const": "found"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "decision": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/decision"
+                    },
+                    {
+                      "properties": {
+                        "outcome": {
+                          "const": "FALSE"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "action": {
+                  "properties": {
+                    "nodeId": {
+                      "$ref": "#/$defs/node"
+                    },
+                    "status": {
+                      "const": "ignored"
+                    },
+                    "receipt": {
+                      "type": "null"
+                    }
+                  }
+                },
+                "failure": {
+                  "type": "null"
+                }
+              }
+            },
+            {
+              "properties": {
+                "lookup": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/lookup"
+                    },
+                    {
+                      "properties": {
+                        "status": {
+                          "const": "found"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "decision": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/decision"
+                    },
+                    {
+                      "properties": {
+                        "outcome": {
+                          "const": "TRUE"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "action": {
+                  "properties": {
+                    "nodeId": {
+                      "$ref": "#/$defs/node"
+                    },
+                    "status": {
+                      "const": "pending"
+                    },
+                    "receipt": {
+                      "type": "null"
+                    }
+                  }
+                },
+                "failure": {
+                  "oneOf": [
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/failure"
+                        },
+                        {
+                          "properties": {
+                            "code": {
+                              "enum": ["action_transient"]
+                            },
+                            "classification": {
+                              "enum": ["transient"]
+                            },
+                            "nodeId": {
+                              "$ref": "#/$defs/node"
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/failure"
+                        },
+                        {
+                          "properties": {
+                            "code": {
+                              "enum": ["event_peer_failure"]
+                            },
+                            "classification": {
+                              "enum": ["transient"]
+                            },
+                            "nodeId": {
+                              "type": "null"
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "properties": {
+                "lookup": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/lookup"
+                    },
+                    {
+                      "properties": {
+                        "status": {
+                          "const": "found"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "decision": {
+                  "type": "null"
+                },
+                "action": {
+                  "properties": {
+                    "nodeId": {
+                      "$ref": "#/$defs/node"
+                    },
+                    "status": {
+                      "const": "not_executed"
+                    },
+                    "receipt": {
+                      "type": "null"
+                    }
+                  }
+                },
+                "failure": {
+                  "oneOf": [
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/failure"
+                        },
+                        {
+                          "properties": {
+                            "code": {
+                              "enum": [
+                                "invalid_condition_config",
+                                "invalid_condition_value",
+                                "condition_type_mismatch"
+                              ]
+                            },
+                            "classification": {
+                              "enum": ["permanent"]
+                            },
+                            "nodeId": {
+                              "$ref": "#/$defs/node"
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/failure"
+                        },
+                        {
+                          "properties": {
+                            "code": {
+                              "enum": ["event_peer_failure"]
+                            },
+                            "classification": {
+                              "enum": ["permanent", "unknown", "exhausted"]
+                            },
+                            "nodeId": {
+                              "type": "null"
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "properties": {
+                "lookup": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/lookup"
+                    },
+                    {
+                      "properties": {
+                        "status": {
+                          "const": "found"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "decision": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/decision"
+                    },
+                    {
+                      "properties": {
+                        "outcome": {
+                          "const": "TRUE"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "action": {
+                  "properties": {
+                    "nodeId": {
+                      "$ref": "#/$defs/node"
+                    },
+                    "status": {
+                      "const": "not_executed"
+                    },
+                    "receipt": {
+                      "type": "null"
+                    }
+                  }
+                },
+                "failure": {
+                  "oneOf": [
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/failure"
+                        },
+                        {
+                          "properties": {
+                            "code": {
+                              "enum": [
+                                "action_permanent",
+                                "action_unknown",
+                                "retry_exhausted"
+                              ]
+                            },
+                            "classification": {
+                              "enum": ["permanent", "unknown", "exhausted"]
+                            },
+                            "nodeId": {
+                              "$ref": "#/$defs/node"
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/failure"
+                        },
+                        {
+                          "properties": {
+                            "code": {
+                              "enum": ["event_peer_failure"]
+                            },
+                            "classification": {
+                              "enum": ["permanent", "unknown", "exhausted"]
+                            },
+                            "nodeId": {
+                              "type": "null"
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "properties": {
+                "lookup": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/lookup"
+                    },
+                    {
+                      "properties": {
+                        "status": {
+                          "const": "not_found"
+                        },
+                        "failure": {
+                          "allOf": [
+                            {
+                              "$ref": "#/$defs/failure"
+                            },
+                            {
+                              "properties": {
+                                "code": {
+                                  "enum": ["viacep_not_found"]
+                                },
+                                "classification": {
+                                  "enum": ["permanent"]
+                                },
+                                "nodeId": {
+                                  "$ref": "#/$defs/node"
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                },
+                "decision": {
+                  "type": "null"
+                },
+                "action": {
+                  "properties": {
+                    "nodeId": {
+                      "$ref": "#/$defs/node"
+                    },
+                    "status": {
+                      "const": "not_executed"
+                    },
+                    "receipt": {
+                      "type": "null"
+                    }
+                  }
+                },
+                "failure": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/failure"
+                    },
+                    {
+                      "properties": {
+                        "code": {
+                          "enum": ["viacep_not_found"]
+                        },
+                        "classification": {
+                          "enum": ["permanent"]
+                        },
+                        "nodeId": {
+                          "$ref": "#/$defs/node"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "properties": {
+                "lookup": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/lookup"
+                    },
+                    {
+                      "properties": {
+                        "status": {
+                          "const": "failed"
+                        },
+                        "failure": {
+                          "allOf": [
+                            {
+                              "$ref": "#/$defs/failure"
+                            },
+                            {
+                              "properties": {
+                                "code": {
+                                  "enum": ["invalid_cep"]
+                                },
+                                "classification": {
+                                  "enum": ["permanent"]
+                                },
+                                "nodeId": {
+                                  "$ref": "#/$defs/node"
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                },
+                "decision": {
+                  "type": "null"
+                },
+                "action": {
+                  "properties": {
+                    "nodeId": {
+                      "$ref": "#/$defs/node"
+                    },
+                    "status": {
+                      "const": "not_executed"
+                    },
+                    "receipt": {
+                      "type": "null"
+                    }
+                  }
+                },
+                "failure": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/failure"
+                    },
+                    {
+                      "properties": {
+                        "code": {
+                          "enum": ["invalid_cep"]
+                        },
+                        "classification": {
+                          "enum": ["permanent"]
+                        },
+                        "nodeId": {
+                          "$ref": "#/$defs/node"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "properties": {
+                "lookup": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/lookup"
+                    },
+                    {
+                      "properties": {
+                        "status": {
+                          "const": "failed"
+                        },
+                        "failure": {
+                          "allOf": [
+                            {
+                              "$ref": "#/$defs/failure"
+                            },
+                            {
+                              "properties": {
+                                "code": {
+                                  "enum": ["viacep_http_permanent"]
+                                },
+                                "classification": {
+                                  "enum": ["permanent"]
+                                },
+                                "nodeId": {
+                                  "$ref": "#/$defs/node"
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                },
+                "decision": {
+                  "type": "null"
+                },
+                "action": {
+                  "properties": {
+                    "nodeId": {
+                      "$ref": "#/$defs/node"
+                    },
+                    "status": {
+                      "const": "not_executed"
+                    },
+                    "receipt": {
+                      "type": "null"
+                    }
+                  }
+                },
+                "failure": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/failure"
+                    },
+                    {
+                      "properties": {
+                        "code": {
+                          "enum": ["viacep_http_permanent"]
+                        },
+                        "classification": {
+                          "enum": ["permanent"]
+                        },
+                        "nodeId": {
+                          "$ref": "#/$defs/node"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "properties": {
+                "lookup": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/lookup"
+                    },
+                    {
+                      "properties": {
+                        "status": {
+                          "const": "failed"
+                        },
+                        "failure": {
+                          "allOf": [
+                            {
+                              "$ref": "#/$defs/failure"
+                            },
+                            {
+                              "properties": {
+                                "code": {
+                                  "enum": ["viacep_invalid_response"]
+                                },
+                                "classification": {
+                                  "enum": ["permanent"]
+                                },
+                                "nodeId": {
+                                  "$ref": "#/$defs/node"
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                },
+                "decision": {
+                  "type": "null"
+                },
+                "action": {
+                  "properties": {
+                    "nodeId": {
+                      "$ref": "#/$defs/node"
+                    },
+                    "status": {
+                      "const": "not_executed"
+                    },
+                    "receipt": {
+                      "type": "null"
+                    }
+                  }
+                },
+                "failure": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/failure"
+                    },
+                    {
+                      "properties": {
+                        "code": {
+                          "enum": ["viacep_invalid_response"]
+                        },
+                        "classification": {
+                          "enum": ["permanent"]
+                        },
+                        "nodeId": {
+                          "$ref": "#/$defs/node"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "properties": {
+                "lookup": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/lookup"
+                    },
+                    {
+                      "properties": {
+                        "status": {
+                          "const": "failed"
+                        },
+                        "failure": {
+                          "allOf": [
+                            {
+                              "$ref": "#/$defs/failure"
+                            },
+                            {
+                              "properties": {
+                                "code": {
+                                  "enum": ["viacep_security_rejected"]
+                                },
+                                "classification": {
+                                  "enum": ["permanent"]
+                                },
+                                "nodeId": {
+                                  "$ref": "#/$defs/node"
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                },
+                "decision": {
+                  "type": "null"
+                },
+                "action": {
+                  "properties": {
+                    "nodeId": {
+                      "$ref": "#/$defs/node"
+                    },
+                    "status": {
+                      "const": "not_executed"
+                    },
+                    "receipt": {
+                      "type": "null"
+                    }
+                  }
+                },
+                "failure": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/failure"
+                    },
+                    {
+                      "properties": {
+                        "code": {
+                          "enum": ["viacep_security_rejected"]
+                        },
+                        "classification": {
+                          "enum": ["permanent"]
+                        },
+                        "nodeId": {
+                          "$ref": "#/$defs/node"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "properties": {
+                "lookup": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/lookup"
+                    },
+                    {
+                      "properties": {
+                        "status": {
+                          "const": "failed"
+                        },
+                        "failure": {
+                          "allOf": [
+                            {
+                              "$ref": "#/$defs/failure"
+                            },
+                            {
+                              "properties": {
+                                "code": {
+                                  "enum": ["viacep_timeout"]
+                                },
+                                "classification": {
+                                  "enum": ["transient"]
+                                },
+                                "nodeId": {
+                                  "$ref": "#/$defs/node"
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                },
+                "decision": {
+                  "type": "null"
+                },
+                "action": {
+                  "properties": {
+                    "nodeId": {
+                      "$ref": "#/$defs/node"
+                    },
+                    "status": {
+                      "const": "pending"
+                    },
+                    "receipt": {
+                      "type": "null"
+                    }
+                  }
+                },
+                "failure": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/failure"
+                    },
+                    {
+                      "properties": {
+                        "code": {
+                          "enum": ["viacep_timeout"]
+                        },
+                        "classification": {
+                          "enum": ["transient"]
+                        },
+                        "nodeId": {
+                          "$ref": "#/$defs/node"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "properties": {
+                "lookup": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/lookup"
+                    },
+                    {
+                      "properties": {
+                        "status": {
+                          "const": "failed"
+                        },
+                        "failure": {
+                          "allOf": [
+                            {
+                              "$ref": "#/$defs/failure"
+                            },
+                            {
+                              "properties": {
+                                "code": {
+                                  "enum": ["viacep_transport"]
+                                },
+                                "classification": {
+                                  "enum": ["transient"]
+                                },
+                                "nodeId": {
+                                  "$ref": "#/$defs/node"
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                },
+                "decision": {
+                  "type": "null"
+                },
+                "action": {
+                  "properties": {
+                    "nodeId": {
+                      "$ref": "#/$defs/node"
+                    },
+                    "status": {
+                      "const": "pending"
+                    },
+                    "receipt": {
+                      "type": "null"
+                    }
+                  }
+                },
+                "failure": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/failure"
+                    },
+                    {
+                      "properties": {
+                        "code": {
+                          "enum": ["viacep_transport"]
+                        },
+                        "classification": {
+                          "enum": ["transient"]
+                        },
+                        "nodeId": {
+                          "$ref": "#/$defs/node"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "properties": {
+                "lookup": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/lookup"
+                    },
+                    {
+                      "properties": {
+                        "status": {
+                          "const": "failed"
+                        },
+                        "failure": {
+                          "allOf": [
+                            {
+                              "$ref": "#/$defs/failure"
+                            },
+                            {
+                              "properties": {
+                                "code": {
+                                  "enum": ["viacep_http_transient"]
+                                },
+                                "classification": {
+                                  "enum": ["transient"]
+                                },
+                                "nodeId": {
+                                  "$ref": "#/$defs/node"
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                },
+                "decision": {
+                  "type": "null"
+                },
+                "action": {
+                  "properties": {
+                    "nodeId": {
+                      "$ref": "#/$defs/node"
+                    },
+                    "status": {
+                      "const": "pending"
+                    },
+                    "receipt": {
+                      "type": "null"
+                    }
+                  }
+                },
+                "failure": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/failure"
+                    },
+                    {
+                      "properties": {
+                        "code": {
+                          "enum": ["viacep_http_transient"]
+                        },
+                        "classification": {
+                          "enum": ["transient"]
+                        },
+                        "nodeId": {
+                          "$ref": "#/$defs/node"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "properties": {
+                "lookup": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/lookup"
+                    },
+                    {
+                      "properties": {
+                        "status": {
+                          "const": "failed"
+                        },
+                        "failure": {
+                          "allOf": [
+                            {
+                              "$ref": "#/$defs/failure"
+                            },
+                            {
+                              "properties": {
+                                "code": {
+                                  "enum": [
+                                    "viacep_timeout",
+                                    "viacep_transport",
+                                    "viacep_http_transient"
+                                  ]
+                                },
+                                "classification": {
+                                  "enum": ["transient"]
+                                },
+                                "nodeId": {
+                                  "$ref": "#/$defs/node"
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                },
+                "decision": {
+                  "type": "null"
+                },
+                "action": {
+                  "properties": {
+                    "nodeId": {
+                      "$ref": "#/$defs/node"
+                    },
+                    "status": {
+                      "const": "not_executed"
+                    },
+                    "receipt": {
+                      "type": "null"
+                    }
+                  }
+                },
+                "failure": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/failure"
+                    },
+                    {
+                      "properties": {
+                        "code": {
+                          "enum": ["event_peer_failure"]
+                        },
+                        "classification": {
+                          "enum": ["unknown", "permanent", "exhausted"]
+                        },
+                        "nodeId": {
+                          "type": "null"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "properties": {
+                "lookup": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/lookup"
+                    },
+                    {
+                      "properties": {
+                        "status": {
+                          "const": "failed"
+                        },
+                        "failure": {
+                          "allOf": [
+                            {
+                              "$ref": "#/$defs/failure"
+                            },
+                            {
+                              "properties": {
+                                "code": {
+                                  "enum": ["viacep_unknown"]
+                                },
+                                "classification": {
+                                  "enum": ["unknown"]
+                                },
+                                "nodeId": {
+                                  "$ref": "#/$defs/node"
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                },
+                "decision": {
+                  "type": "null"
+                },
+                "action": {
+                  "properties": {
+                    "nodeId": {
+                      "$ref": "#/$defs/node"
+                    },
+                    "status": {
+                      "const": "not_executed"
+                    },
+                    "receipt": {
+                      "type": "null"
+                    }
+                  }
+                },
+                "failure": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/failure"
+                    },
+                    {
+                      "properties": {
+                        "code": {
+                          "enum": ["viacep_unknown"]
+                        },
+                        "classification": {
+                          "enum": ["unknown"]
+                        },
+                        "nodeId": {
+                          "$ref": "#/$defs/node"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "properties": {
+                "lookup": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/lookup"
+                    },
+                    {
+                      "properties": {
+                        "status": {
+                          "const": "failed"
+                        },
+                        "failure": {
+                          "allOf": [
+                            {
+                              "$ref": "#/$defs/failure"
+                            },
+                            {
+                              "properties": {
+                                "code": {
+                                  "enum": ["viacep_unknown"]
+                                },
+                                "classification": {
+                                  "enum": ["unknown"]
+                                },
+                                "nodeId": {
+                                  "$ref": "#/$defs/node"
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                },
+                "decision": {
+                  "type": "null"
+                },
+                "action": {
+                  "properties": {
+                    "nodeId": {
+                      "$ref": "#/$defs/node"
+                    },
+                    "status": {
+                      "const": "not_executed"
+                    },
+                    "receipt": {
+                      "type": "null"
+                    }
+                  }
+                },
+                "failure": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/failure"
+                    },
+                    {
+                      "properties": {
+                        "code": {
+                          "enum": ["event_peer_failure"]
+                        },
+                        "classification": {
+                          "enum": ["permanent"]
+                        },
+                        "nodeId": {
+                          "type": "null"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "properties": {
+                "lookup": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/lookup"
+                    },
+                    {
+                      "properties": {
+                        "status": {
+                          "const": "failed"
+                        },
+                        "failure": {
+                          "allOf": [
+                            {
+                              "$ref": "#/$defs/failure"
+                            },
+                            {
+                              "properties": {
+                                "code": {
+                                  "enum": ["retry_exhausted"]
+                                },
+                                "classification": {
+                                  "enum": ["exhausted"]
+                                },
+                                "nodeId": {
+                                  "$ref": "#/$defs/node"
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                },
+                "decision": {
+                  "type": "null"
+                },
+                "action": {
+                  "properties": {
+                    "nodeId": {
+                      "$ref": "#/$defs/node"
+                    },
+                    "status": {
+                      "const": "not_executed"
+                    },
+                    "receipt": {
+                      "type": "null"
+                    }
+                  }
+                },
+                "failure": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/failure"
+                    },
+                    {
+                      "properties": {
+                        "code": {
+                          "enum": ["retry_exhausted"]
+                        },
+                        "classification": {
+                          "enum": ["exhausted"]
+                        },
+                        "nodeId": {
+                          "$ref": "#/$defs/node"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "$comment": "Schema validity is necessary but not sufficient. Runtime validates event and receipt IDs against the outer event, lookup/address CEP equality, failure and lookup node IDs, distinct graph nodes, decision targets, and pinned graph/event correspondence."
     }
   }
 }

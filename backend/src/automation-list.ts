@@ -49,8 +49,8 @@ export const listResponse = {
           scope: text(128),
           active: { type: "boolean" },
           revision: { type: "integer", minimum: 1, maximum: 2147483647 },
-          schemaVersion: { enum: [1, 2] },
-          workflowVersion: { enum: [1, 2] },
+          schemaVersion: { enum: [1, 2, 3] },
+          workflowVersion: { enum: [1, 2, 3] },
         },
       },
     },
@@ -132,8 +132,8 @@ export function automationListRoute(app: FastifyInstance, pool: pg.Pool) {
             !Number.isInteger(row.revision) ||
             row.revision < 1 ||
             row.revision > 2147483647 ||
-            ![1, 2].includes(row.schema_version) ||
-            ![1, 2].includes(row.workflow_version)
+            ![1, 2, 3].includes(row.schema_version) ||
+            ![1, 2, 3].includes(row.workflow_version)
           )
             throw new Error("invalid summary invariant");
         }

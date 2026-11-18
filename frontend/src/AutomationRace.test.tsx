@@ -8,6 +8,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import Automations from "./Automations";
+import { runtimeStatus } from "./test-runtime-status-fixture";
 
 it("keeps a successful update when an older refresh resolves afterward", async () => {
   const id = "11111111-1111-1111-1111-111111111111";
@@ -36,36 +37,45 @@ it("keeps a successful update when an older refresh resolves afterward", async (
   vi.stubGlobal(
     "fetch",
     vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-      if (String(input).includes("executions"))
+      const url = String(input);
+      if (url.endsWith("/runtime/status"))
+        return Promise.resolve(json(runtimeStatus()));
+      if (url.includes("/automations/list"))
+        return Promise.resolve(json({ items: [], nextCursor: null }));
+      if (url.includes("executions"))
         return Promise.resolve(json({ items: [] }));
       if (init?.method === "PUT")
         return Promise.resolve(json({ ...record, revision: 2, active: true }));
+      if (!url.endsWith(`/automations/${id}`))
+        throw new Error(`Unexpected request ${init?.method ?? "GET"} ${url}`);
       return ++reads === 1 ? Promise.resolve(json(record)) : oldRead;
     }),
   );
   try {
     render(<Automations route={`#automations/${id}`} />);
     expect(
-      await screen.findByRole("button", { name: "Activate" }),
+      await screen.findByRole("button", { name: "Ativar" }),
     ).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Atualizar automação" }),
+    );
     await waitFor(() => expect(reads).toBe(2));
-    expect(screen.getByText("Refreshing automation.")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Activate" }));
+    expect(screen.getByText("Atualizando automação.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Ativar" }));
     expect(
-      await screen.findByRole("button", { name: "Deactivate" }),
+      await screen.findByRole("button", { name: "Desativar" }),
     ).toBeInTheDocument();
-    expect(screen.getByText(/Active .* revision 2/)).toBeInTheDocument();
+    expect(screen.getByText(/Ativa .* revisão 2/)).toBeInTheDocument();
     await act(async () => {
       resolveRead(json(record));
       await oldRead;
     });
     expect(
-      screen.getByRole("button", { name: "Deactivate" }),
+      screen.getByRole("button", { name: "Desativar" }),
     ).toBeInTheDocument();
-    expect(screen.getByText(/Active .* revision 2/)).toBeInTheDocument();
+    expect(screen.getByText(/Ativa .* revisão 2/)).toBeInTheDocument();
     expect(
-      screen.queryByText("Refreshing automation."),
+      screen.queryByText("Atualizando automação."),
     ).not.toBeInTheDocument();
   } finally {
     vi.unstubAllGlobals();
@@ -141,9 +151,9 @@ it("does not display a previous definition or its history while navigating betwe
   view.rerender(<Automations route={`#automations/${second}`} />);
   expect(screen.queryByText("Previous definition")).not.toBeInTheDocument();
   expect(
-    screen.queryByRole("button", { name: "Activate" }),
+    screen.queryByRole("button", { name: "Ativar" }),
   ).not.toBeInTheDocument();
-  expect(screen.getByRole("status")).toHaveTextContent("Loading automation");
+  expect(screen.getByRole("status")).toHaveTextContent("Carregando automação");
   vi.unstubAllGlobals();
 });
 
@@ -179,8 +189,8 @@ it("blocks activation for a dirty graph and for a saved condition placeholder", 
       return Promise.resolve(new Response(JSON.stringify(record)));
     }),
   );
-  render(<Automations route={`#automations/${id}`} />);
-  const activate = await screen.findByRole("button", { name: "Activate" });
+  render(<Automations route={`#automations/${id}/builder`} />);
+  const activate = await screen.findByRole("button", { name: "Ativar" });
   await waitFor(() => expect(activate).toBeEnabled());
   fireEvent.click(
     screen.getByRole("button", { name: "+ Condition (placeholder)" }),
@@ -189,8 +199,8 @@ it("blocks activation for a dirty graph and for a saved condition placeholder", 
   fireEvent.click(
     screen.getByRole("button", { name: "Connect through condition" }),
   );
-  fireEvent.click(screen.getByRole("button", { name: "Save workflow" }));
-  await screen.findByText(/Inactive .* revision 2/);
-  expect(screen.getByRole("button", { name: "Activate" })).toBeDisabled();
+  fireEvent.click(screen.getByRole("button", { name: "Salvar alterações" }));
+  await screen.findByText(/Desativada .* revisão 2/);
+  expect(screen.getByRole("button", { name: "Ativar" })).toBeDisabled();
   vi.unstubAllGlobals();
 });

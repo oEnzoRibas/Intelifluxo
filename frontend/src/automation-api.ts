@@ -11,6 +11,8 @@ import {
 } from "./api";
 import { defaultGraph, graphValid, type WorkflowGraph } from "./workflow-graph";
 import { conditionGraphValid } from "./condition-contract";
+import { viacepGraphValid, type ViaCepGraph } from "./viacep-graph";
+import { validViaCepResult, type ExecutionResultV3 } from "./viacep-result";
 
 export type Definition = {
   id: string;
@@ -18,19 +20,19 @@ export type Definition = {
   revision: number;
   name: string;
   active: boolean;
-  schemaVersion: 1 | 2;
+  schemaVersion: 1 | 2 | 3;
   trigger: { type: "receipt.v1" };
   action: { type: "record-receipt.v1" };
   createdAt: string;
-  graph: WorkflowGraph;
-  graphSource: "server" | "legacy-default" | "condition-v2";
+  graph: WorkflowGraph | ViaCepGraph;
+  graphSource: "server" | "legacy-default" | "condition-v2" | "viacep-v3";
 };
 export type Execution = {
   id: string;
   eventId: string;
   automationId: string;
   revision: number;
-  schemaVersion: 1 | 2;
+  schemaVersion: 1 | 2 | 3;
   trigger: { type: "receipt.v1" };
   action: { type: "record-receipt.v1" };
   createdAt: string;
@@ -42,7 +44,7 @@ export type Execution = {
     | "retry_released"
     | "blocked";
   retry: null | (Retry & { scope: "event" });
-  result: null | Receipt | ConditionResult;
+  result: null | Receipt | ConditionResult | ExecutionResultV3;
 };
 type Receipt = { kind: "local-receipt.v1"; eventId: string; message: string };
 export type ConditionResult = {
@@ -77,6 +79,8 @@ const receipt = (v: unknown, eventId: unknown) =>
 function resultValid(version: unknown, eventId: unknown, v: unknown): boolean {
   if (v === null) return true;
   if (version === 1) return receipt(v, eventId);
+  if (version === 3)
+    return typeof eventId === "string" && validViaCepResult(v, eventId);
   if (
     version !== 2 ||
     !object(v) ||
@@ -164,7 +168,7 @@ export const validText = (v: unknown, max: number): v is string =>
   !/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u.test(
     v,
   );
-const fixedValid = (v: Record<string, unknown>, schemaVersion: 1 | 2 = 1) =>
+const fixedValid = (v: Record<string, unknown>, schemaVersion: 1 | 2 | 3 = 1) =>
   v.schemaVersion === schemaVersion &&
   object(v.trigger) &&
   exactKeys(v.trigger, ["type"]) &&
@@ -172,7 +176,21 @@ const fixedValid = (v: Record<string, unknown>, schemaVersion: 1 | 2 = 1) =>
   object(v.action) &&
   exactKeys(v.action, ["type"]) &&
   v.action.type === fixed.action.type;
+export class UnsupportedDefinitionError extends ApiError {
+  constructor() {
+    super("invalid");
+  }
+}
 export function definition(v: unknown): Definition {
+  if (
+    object(v) &&
+    ((typeof v.schemaVersion === "number" &&
+      ![1, 2, 3].includes(v.schemaVersion)) ||
+      (object(v.graph) &&
+        typeof v.graph.version === "number" &&
+        ![1, 2, 3].includes(v.graph.version)))
+  )
+    throw new UnsupportedDefinitionError();
   const keys = [
     "id",
     "scope",
@@ -192,25 +210,29 @@ export function definition(v: unknown): Definition {
     !validText(v.name, 200) ||
     !integerAtLeast(v.revision, 1) ||
     typeof v.active !== "boolean" ||
-    !(fixedValid(v, 1) || fixedValid(v, 2)) ||
+    !(fixedValid(v, 1) || fixedValid(v, 2) || fixedValid(v, 3)) ||
     !dateTime(v.createdAt) ||
     (v.schemaVersion === 1
       ? "graph" in v &&
         (!object(v.graph) ||
           v.graph.version !== 1 ||
           !graphValid(v.graph, v.active === true))
-      : !("graph" in v) || !conditionGraphValid(v.graph))
+      : v.schemaVersion === 2
+        ? !("graph" in v) || !conditionGraphValid(v.graph)
+        : !("graph" in v) || !viacepGraphValid(v.graph))
   )
     throw new ApiError("invalid");
   return {
     ...v,
     graph: "graph" in v ? v.graph : defaultGraph(),
     graphSource:
-      v.schemaVersion === 2
-        ? "condition-v2"
-        : "graph" in v
-          ? "server"
-          : "legacy-default",
+      v.schemaVersion === 3
+        ? "viacep-v3"
+        : v.schemaVersion === 2
+          ? "condition-v2"
+          : "graph" in v
+            ? "server"
+            : "legacy-default",
   } as Definition;
 }
 export function execution(v: unknown): Execution {
@@ -233,7 +255,7 @@ export function execution(v: unknown): Execution {
     !uuid(v.eventId) ||
     !uuid(v.automationId) ||
     !integerAtLeast(v.revision, 1) ||
-    !(fixedValid(v, 1) || fixedValid(v, 2)) ||
+    !(fixedValid(v, 1) || fixedValid(v, 2) || fixedValid(v, 3)) ||
     !dateTime(v.createdAt) ||
     ![
       "accepted",
@@ -347,8 +369,8 @@ export type AutomationSummary = {
   scope: string;
   active: boolean;
   revision: number;
-  schemaVersion: 1 | 2;
-  workflowVersion: 1 | 2;
+  schemaVersion: number;
+  workflowVersion: number;
 };
 export type SummaryPage = {
   items: AutomationSummary[];
@@ -393,8 +415,8 @@ export function parseSummaryPage(
       typeof item.active !== "boolean" ||
       !integerAtLeast(item.revision, 1) ||
       (item.revision as number) > 2147483647 ||
-      (item.schemaVersion !== 1 && item.schemaVersion !== 2) ||
-      (item.workflowVersion !== 1 && item.workflowVersion !== 2)
+      !integerAtLeast(item.schemaVersion, 1) ||
+      !integerAtLeast(item.workflowVersion, 1)
     )
       throw new ApiError("invalid");
   }
@@ -439,11 +461,34 @@ export async function createDefinition(
   scope: string,
   name: string,
   signal: AbortSignal,
+  graph?: WorkflowGraph | ViaCepGraph,
 ) {
+  if (
+    graph &&
+    !(graph.version === 3
+      ? viacepGraphValid(graph)
+      : conditionGraphValid(graph))
+  )
+    throw new ApiError("invalid");
   const v = definition(
-    await call("/automations", signal, "POST", { scope, name, ...fixed }),
+    await call(
+      "/automations",
+      signal,
+      "POST",
+      graph
+        ? { scope, name, ...fixed, schemaVersion: graph.version, graph }
+        : { scope, name, ...fixed },
+    ),
   );
-  if (v.scope !== scope || v.name !== name || v.active || v.revision !== 1)
+  if (
+    v.scope !== scope ||
+    v.name !== name ||
+    v.active ||
+    v.revision !== 1 ||
+    (graph &&
+      (v.schemaVersion !== graph.version ||
+        canonical(v.graph) !== canonical(graph)))
+  )
     throw new ApiError("invalid");
   return v;
 }
@@ -452,7 +497,9 @@ export async function updateDefinition(d: Definition, signal: AbortSignal) {
     d.graphSource === "legacy-default" ||
     !(d.schemaVersion === 1
       ? d.graph.version === 1 && graphValid(d.graph, !d.active)
-      : conditionGraphValid(d.graph))
+      : d.schemaVersion === 2
+        ? conditionGraphValid(d.graph)
+        : d.schemaVersion === 3 && viacepGraphValid(d.graph))
   )
     throw new ApiError("invalid");
   const v = definition(
@@ -489,14 +536,16 @@ function canonical(value: unknown): string {
 }
 export async function saveGraph(
   d: Definition,
-  graph: WorkflowGraph,
+  graph: WorkflowGraph | ViaCepGraph,
   signal: AbortSignal,
 ) {
   if (
     d.graphSource === "legacy-default" ||
     !(graph.version === 1
       ? graphValid(graph, d.active)
-      : graph.version === 2 && conditionGraphValid(graph)) ||
+      : graph.version === 2
+        ? conditionGraphValid(graph)
+        : graph.version === 3 && viacepGraphValid(graph)) ||
     (d.active && graph.version !== d.schemaVersion)
   )
     throw new ApiError("invalid");
@@ -530,6 +579,15 @@ export async function listExecutions(id: string, signal: AbortSignal) {
     execution,
   );
   if (result.some((x) => x.automationId !== id)) throw new ApiError("invalid");
+  return result;
+}
+/** The endpoint is capped at 100 and does not guarantee complete coverage. */
+export async function listEventExecutions(id: string, signal: AbortSignal) {
+  const result = items(
+    await call(`/executions?eventId=${encodeURIComponent(id)}`, signal),
+    execution,
+  );
+  if (result.some((x) => x.eventId !== id)) throw new ApiError("invalid");
   return result;
 }
 export async function getExecution(id: string, signal: AbortSignal) {

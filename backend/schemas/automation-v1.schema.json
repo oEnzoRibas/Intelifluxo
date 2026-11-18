@@ -20,7 +20,7 @@
           "pattern": "^(?=[\\s\\S]*\\S)(?:[^\\u0000\\uD800-\\uDFFF]|[\\uD800-\\uDBFF][\\uDC00-\\uDFFF])*(?![\\s\\S])"
         },
         "schemaVersion": {
-          "enum": [1, 2]
+          "enum": [1, 2, 3]
         },
         "trigger": {
           "type": "object",
@@ -835,6 +835,1164 @@
                   ]
                 }
               }
+            },
+            {
+              "description": "Draft-07 cannot enforce ID uniqueness, step references or edge-to-node topology; validate graph-v3 semantics before use.",
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["version", "nodes", "edges"],
+              "properties": {
+                "version": {
+                  "const": 3
+                },
+                "nodes": {
+                  "type": "array",
+                  "minItems": 5,
+                  "maxItems": 5,
+                  "items": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": ["id", "kind", "type", "position"],
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}(?![\\s\\S])"
+                          },
+                          "kind": {
+                            "const": "trigger"
+                          },
+                          "type": {
+                            "const": "receipt.v1"
+                          },
+                          "position": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": ["x", "y"],
+                            "properties": {
+                              "x": {
+                                "type": "number",
+                                "minimum": -10000,
+                                "maximum": 10000
+                              },
+                              "y": {
+                                "type": "number",
+                                "minimum": -10000,
+                                "maximum": 10000
+                              }
+                            }
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "id",
+                          "kind",
+                          "type",
+                          "position",
+                          "config"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}(?![\\s\\S])"
+                          },
+                          "kind": {
+                            "const": "condition"
+                          },
+                          "type": {
+                            "const": "condition.v2"
+                          },
+                          "position": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": ["x", "y"],
+                            "properties": {
+                              "x": {
+                                "type": "number",
+                                "minimum": -10000,
+                                "maximum": 10000
+                              },
+                              "y": {
+                                "type": "number",
+                                "minimum": -10000,
+                                "maximum": 10000
+                              }
+                            }
+                          },
+                          "config": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": ["input", "operator"],
+                            "properties": {
+                              "operator": {
+                                "type": "string"
+                              },
+                              "expectedType": {
+                                "type": "string"
+                              },
+                              "expectedValue": {},
+                              "input": {
+                                "oneOf": [
+                                  {
+                                    "type": "object",
+                                    "additionalProperties": false,
+                                    "required": ["source", "fieldPath"],
+                                    "properties": {
+                                      "source": {
+                                        "const": "event"
+                                      },
+                                      "fieldPath": {
+                                        "type": "string",
+                                        "maxLength": 256,
+                                        "pattern": "^(?!(?:.*\\.)?(?:__proto__|prototype|constructor)(?:\\.|(?![\\s\\S])))[A-Za-z_][A-Za-z0-9_]{0,63}(?:\\.[A-Za-z_][A-Za-z0-9_]{0,63}){0,7}(?![\\s\\S])"
+                                      }
+                                    }
+                                  },
+                                  {
+                                    "type": "object",
+                                    "additionalProperties": false,
+                                    "required": [
+                                      "source",
+                                      "nodeId",
+                                      "fieldPath"
+                                    ],
+                                    "properties": {
+                                      "source": {
+                                        "const": "step"
+                                      },
+                                      "nodeId": {
+                                        "type": "string",
+                                        "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}(?![\\s\\S])"
+                                      },
+                                      "fieldPath": {
+                                        "type": "string",
+                                        "maxLength": 256,
+                                        "pattern": "^(?!(?:.*\\.)?(?:__proto__|prototype|constructor)(?:\\.|(?![\\s\\S])))[A-Za-z_][A-Za-z0-9_]{0,63}(?:\\.[A-Za-z_][A-Za-z0-9_]{0,63}){0,7}(?![\\s\\S])"
+                                      }
+                                    }
+                                  }
+                                ]
+                              }
+                            },
+                            "oneOf": [
+                              {
+                                "properties": {
+                                  "operator": {
+                                    "const": "exists"
+                                  }
+                                },
+                                "not": {
+                                  "anyOf": [
+                                    {
+                                      "required": ["expectedType"]
+                                    },
+                                    {
+                                      "required": ["expectedValue"]
+                                    }
+                                  ]
+                                }
+                              },
+                              {
+                                "required": ["expectedType", "expectedValue"],
+                                "properties": {
+                                  "operator": {
+                                    "enum": ["equals", "not_equals"]
+                                  },
+                                  "expectedType": {
+                                    "const": "null"
+                                  },
+                                  "expectedValue": {
+                                    "type": "null"
+                                  }
+                                }
+                              },
+                              {
+                                "required": ["expectedType", "expectedValue"],
+                                "properties": {
+                                  "operator": {
+                                    "enum": ["equals", "not_equals"]
+                                  },
+                                  "expectedType": {
+                                    "const": "boolean"
+                                  },
+                                  "expectedValue": {
+                                    "type": "boolean"
+                                  }
+                                }
+                              },
+                              {
+                                "required": ["expectedType", "expectedValue"],
+                                "properties": {
+                                  "operator": {
+                                    "enum": [
+                                      "equals",
+                                      "not_equals",
+                                      "greater_than",
+                                      "less_than"
+                                    ]
+                                  },
+                                  "expectedType": {
+                                    "const": "number"
+                                  },
+                                  "expectedValue": {
+                                    "type": "number"
+                                  }
+                                }
+                              },
+                              {
+                                "required": ["expectedType", "expectedValue"],
+                                "properties": {
+                                  "operator": {
+                                    "enum": ["equals", "not_equals", "contains"]
+                                  },
+                                  "expectedType": {
+                                    "const": "string"
+                                  },
+                                  "expectedValue": {
+                                    "type": "string",
+                                    "maxLength": 1024,
+                                    "pattern": "^(?:[^\\u0000\\uD800-\\uDFFF]|[\\uD800-\\uDBFF][\\uDC00-\\uDFFF])*(?![\\s\\S])"
+                                  }
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": ["id", "kind", "type", "position"],
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}(?![\\s\\S])"
+                          },
+                          "kind": {
+                            "const": "action"
+                          },
+                          "type": {
+                            "const": "record-receipt.v1"
+                          },
+                          "position": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": ["x", "y"],
+                            "properties": {
+                              "x": {
+                                "type": "number",
+                                "minimum": -10000,
+                                "maximum": 10000
+                              },
+                              "y": {
+                                "type": "number",
+                                "minimum": -10000,
+                                "maximum": 10000
+                              }
+                            }
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": ["id", "kind", "type", "position"],
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}(?![\\s\\S])"
+                          },
+                          "kind": {
+                            "const": "end"
+                          },
+                          "type": {
+                            "const": "end.v1"
+                          },
+                          "position": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": ["x", "y"],
+                            "properties": {
+                              "x": {
+                                "type": "number",
+                                "minimum": -10000,
+                                "maximum": 10000
+                              },
+                              "y": {
+                                "type": "number",
+                                "minimum": -10000,
+                                "maximum": 10000
+                              }
+                            }
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "id",
+                          "kind",
+                          "type",
+                          "position",
+                          "config"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}(?![\\s\\S])"
+                          },
+                          "kind": {
+                            "const": "lookup"
+                          },
+                          "type": {
+                            "const": "viacep-address.v1"
+                          },
+                          "position": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": ["x", "y"],
+                            "properties": {
+                              "x": {
+                                "type": "number",
+                                "minimum": -10000,
+                                "maximum": 10000
+                              },
+                              "y": {
+                                "type": "number",
+                                "minimum": -10000,
+                                "maximum": 10000
+                              }
+                            }
+                          },
+                          "config": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": ["cep"],
+                            "properties": {
+                              "cep": {
+                                "oneOf": [
+                                  {
+                                    "type": "object",
+                                    "additionalProperties": false,
+                                    "required": ["source", "value"],
+                                    "properties": {
+                                      "source": {
+                                        "const": "fixed"
+                                      },
+                                      "value": {
+                                        "type": "string",
+                                        "pattern": "^(?:[0-9]{8}|[0-9]{5}-[0-9]{3})(?![\\s\\S])"
+                                      }
+                                    }
+                                  },
+                                  {
+                                    "type": "object",
+                                    "additionalProperties": false,
+                                    "required": ["source", "fieldPath"],
+                                    "properties": {
+                                      "source": {
+                                        "const": "event"
+                                      },
+                                      "fieldPath": {
+                                        "type": "string",
+                                        "maxLength": 256,
+                                        "pattern": "^(?!(?:.*\\.)?(?:__proto__|prototype|constructor)(?:\\.|(?![\\s\\S])))[A-Za-z_][A-Za-z0-9_]{0,63}(?:\\.[A-Za-z_][A-Za-z0-9_]{0,63}){0,7}(?![\\s\\S])"
+                                      }
+                                    }
+                                  }
+                                ]
+                              }
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "allOf": [
+                    {
+                      "contains": {
+                        "properties": {
+                          "kind": {
+                            "const": "trigger"
+                          }
+                        },
+                        "required": ["kind"]
+                      }
+                    },
+                    {
+                      "contains": {
+                        "properties": {
+                          "kind": {
+                            "const": "condition"
+                          }
+                        },
+                        "required": ["kind"]
+                      }
+                    },
+                    {
+                      "contains": {
+                        "properties": {
+                          "kind": {
+                            "const": "action"
+                          }
+                        },
+                        "required": ["kind"]
+                      }
+                    },
+                    {
+                      "contains": {
+                        "properties": {
+                          "kind": {
+                            "const": "end"
+                          }
+                        },
+                        "required": ["kind"]
+                      }
+                    },
+                    {
+                      "contains": {
+                        "properties": {
+                          "kind": {
+                            "const": "lookup"
+                          }
+                        },
+                        "required": ["kind"]
+                      }
+                    }
+                  ]
+                },
+                "edges": {
+                  "type": "array",
+                  "minItems": 5,
+                  "maxItems": 5,
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["source", "target"],
+                    "properties": {
+                      "source": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}(?![\\s\\S])"
+                      },
+                      "target": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}(?![\\s\\S])"
+                      },
+                      "sourcePort": {
+                        "enum": ["TRUE", "FALSE"]
+                      }
+                    }
+                  },
+                  "anyOf": [
+                    {
+                      "items": [
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "TRUE"
+                            }
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "FALSE"
+                            }
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "items": [
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "TRUE"
+                            }
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "FALSE"
+                            }
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "items": [
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "TRUE"
+                            }
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "FALSE"
+                            }
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "items": [
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "TRUE"
+                            }
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "FALSE"
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "items": [
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "FALSE"
+                            }
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "TRUE"
+                            }
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "items": [
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "TRUE"
+                            }
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "FALSE"
+                            }
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "items": [
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "TRUE"
+                            }
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "FALSE"
+                            }
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "items": [
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "TRUE"
+                            }
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "FALSE"
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "items": [
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "FALSE"
+                            }
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "TRUE"
+                            }
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "items": [
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "FALSE"
+                            }
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "TRUE"
+                            }
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "items": [
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "TRUE"
+                            }
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "FALSE"
+                            }
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "items": [
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "TRUE"
+                            }
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "FALSE"
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "items": [
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "FALSE"
+                            }
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "TRUE"
+                            }
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "items": [
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "FALSE"
+                            }
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "TRUE"
+                            }
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "items": [
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "FALSE"
+                            }
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "TRUE"
+                            }
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "items": [
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "TRUE"
+                            }
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "FALSE"
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "items": [
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "FALSE"
+                            }
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "TRUE"
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "items": [
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "FALSE"
+                            }
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "TRUE"
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "items": [
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "FALSE"
+                            }
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "TRUE"
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "items": [
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "FALSE"
+                            }
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "TRUE"
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              }
             }
           ]
         }
@@ -877,6 +2035,28 @@
                 "properties": {
                   "version": {
                     "const": 1
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "schemaVersion": {
+                "const": 3
+              }
+            },
+            "required": ["schemaVersion"]
+          },
+          "then": {
+            "required": ["graph"],
+            "properties": {
+              "graph": {
+                "properties": {
+                  "version": {
+                    "const": 3
                   }
                 }
               }
@@ -912,7 +2092,7 @@
           "pattern": "^(?=[\\s\\S]*\\S)(?:[^\\u0000\\uD800-\\uDFFF]|[\\uD800-\\uDBFF][\\uDC00-\\uDFFF])*(?![\\s\\S])"
         },
         "schemaVersion": {
-          "enum": [1, 2]
+          "enum": [1, 2, 3]
         },
         "trigger": {
           "type": "object",
@@ -1727,6 +2907,1164 @@
                   ]
                 }
               }
+            },
+            {
+              "description": "Draft-07 cannot enforce ID uniqueness, step references or edge-to-node topology; validate graph-v3 semantics before use.",
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["version", "nodes", "edges"],
+              "properties": {
+                "version": {
+                  "const": 3
+                },
+                "nodes": {
+                  "type": "array",
+                  "minItems": 5,
+                  "maxItems": 5,
+                  "items": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": ["id", "kind", "type", "position"],
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}(?![\\s\\S])"
+                          },
+                          "kind": {
+                            "const": "trigger"
+                          },
+                          "type": {
+                            "const": "receipt.v1"
+                          },
+                          "position": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": ["x", "y"],
+                            "properties": {
+                              "x": {
+                                "type": "number",
+                                "minimum": -10000,
+                                "maximum": 10000
+                              },
+                              "y": {
+                                "type": "number",
+                                "minimum": -10000,
+                                "maximum": 10000
+                              }
+                            }
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "id",
+                          "kind",
+                          "type",
+                          "position",
+                          "config"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}(?![\\s\\S])"
+                          },
+                          "kind": {
+                            "const": "condition"
+                          },
+                          "type": {
+                            "const": "condition.v2"
+                          },
+                          "position": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": ["x", "y"],
+                            "properties": {
+                              "x": {
+                                "type": "number",
+                                "minimum": -10000,
+                                "maximum": 10000
+                              },
+                              "y": {
+                                "type": "number",
+                                "minimum": -10000,
+                                "maximum": 10000
+                              }
+                            }
+                          },
+                          "config": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": ["input", "operator"],
+                            "properties": {
+                              "operator": {
+                                "type": "string"
+                              },
+                              "expectedType": {
+                                "type": "string"
+                              },
+                              "expectedValue": {},
+                              "input": {
+                                "oneOf": [
+                                  {
+                                    "type": "object",
+                                    "additionalProperties": false,
+                                    "required": ["source", "fieldPath"],
+                                    "properties": {
+                                      "source": {
+                                        "const": "event"
+                                      },
+                                      "fieldPath": {
+                                        "type": "string",
+                                        "maxLength": 256,
+                                        "pattern": "^(?!(?:.*\\.)?(?:__proto__|prototype|constructor)(?:\\.|(?![\\s\\S])))[A-Za-z_][A-Za-z0-9_]{0,63}(?:\\.[A-Za-z_][A-Za-z0-9_]{0,63}){0,7}(?![\\s\\S])"
+                                      }
+                                    }
+                                  },
+                                  {
+                                    "type": "object",
+                                    "additionalProperties": false,
+                                    "required": [
+                                      "source",
+                                      "nodeId",
+                                      "fieldPath"
+                                    ],
+                                    "properties": {
+                                      "source": {
+                                        "const": "step"
+                                      },
+                                      "nodeId": {
+                                        "type": "string",
+                                        "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}(?![\\s\\S])"
+                                      },
+                                      "fieldPath": {
+                                        "type": "string",
+                                        "maxLength": 256,
+                                        "pattern": "^(?!(?:.*\\.)?(?:__proto__|prototype|constructor)(?:\\.|(?![\\s\\S])))[A-Za-z_][A-Za-z0-9_]{0,63}(?:\\.[A-Za-z_][A-Za-z0-9_]{0,63}){0,7}(?![\\s\\S])"
+                                      }
+                                    }
+                                  }
+                                ]
+                              }
+                            },
+                            "oneOf": [
+                              {
+                                "properties": {
+                                  "operator": {
+                                    "const": "exists"
+                                  }
+                                },
+                                "not": {
+                                  "anyOf": [
+                                    {
+                                      "required": ["expectedType"]
+                                    },
+                                    {
+                                      "required": ["expectedValue"]
+                                    }
+                                  ]
+                                }
+                              },
+                              {
+                                "required": ["expectedType", "expectedValue"],
+                                "properties": {
+                                  "operator": {
+                                    "enum": ["equals", "not_equals"]
+                                  },
+                                  "expectedType": {
+                                    "const": "null"
+                                  },
+                                  "expectedValue": {
+                                    "type": "null"
+                                  }
+                                }
+                              },
+                              {
+                                "required": ["expectedType", "expectedValue"],
+                                "properties": {
+                                  "operator": {
+                                    "enum": ["equals", "not_equals"]
+                                  },
+                                  "expectedType": {
+                                    "const": "boolean"
+                                  },
+                                  "expectedValue": {
+                                    "type": "boolean"
+                                  }
+                                }
+                              },
+                              {
+                                "required": ["expectedType", "expectedValue"],
+                                "properties": {
+                                  "operator": {
+                                    "enum": [
+                                      "equals",
+                                      "not_equals",
+                                      "greater_than",
+                                      "less_than"
+                                    ]
+                                  },
+                                  "expectedType": {
+                                    "const": "number"
+                                  },
+                                  "expectedValue": {
+                                    "type": "number"
+                                  }
+                                }
+                              },
+                              {
+                                "required": ["expectedType", "expectedValue"],
+                                "properties": {
+                                  "operator": {
+                                    "enum": ["equals", "not_equals", "contains"]
+                                  },
+                                  "expectedType": {
+                                    "const": "string"
+                                  },
+                                  "expectedValue": {
+                                    "type": "string",
+                                    "maxLength": 1024,
+                                    "pattern": "^(?:[^\\u0000\\uD800-\\uDFFF]|[\\uD800-\\uDBFF][\\uDC00-\\uDFFF])*(?![\\s\\S])"
+                                  }
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": ["id", "kind", "type", "position"],
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}(?![\\s\\S])"
+                          },
+                          "kind": {
+                            "const": "action"
+                          },
+                          "type": {
+                            "const": "record-receipt.v1"
+                          },
+                          "position": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": ["x", "y"],
+                            "properties": {
+                              "x": {
+                                "type": "number",
+                                "minimum": -10000,
+                                "maximum": 10000
+                              },
+                              "y": {
+                                "type": "number",
+                                "minimum": -10000,
+                                "maximum": 10000
+                              }
+                            }
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": ["id", "kind", "type", "position"],
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}(?![\\s\\S])"
+                          },
+                          "kind": {
+                            "const": "end"
+                          },
+                          "type": {
+                            "const": "end.v1"
+                          },
+                          "position": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": ["x", "y"],
+                            "properties": {
+                              "x": {
+                                "type": "number",
+                                "minimum": -10000,
+                                "maximum": 10000
+                              },
+                              "y": {
+                                "type": "number",
+                                "minimum": -10000,
+                                "maximum": 10000
+                              }
+                            }
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "id",
+                          "kind",
+                          "type",
+                          "position",
+                          "config"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}(?![\\s\\S])"
+                          },
+                          "kind": {
+                            "const": "lookup"
+                          },
+                          "type": {
+                            "const": "viacep-address.v1"
+                          },
+                          "position": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": ["x", "y"],
+                            "properties": {
+                              "x": {
+                                "type": "number",
+                                "minimum": -10000,
+                                "maximum": 10000
+                              },
+                              "y": {
+                                "type": "number",
+                                "minimum": -10000,
+                                "maximum": 10000
+                              }
+                            }
+                          },
+                          "config": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": ["cep"],
+                            "properties": {
+                              "cep": {
+                                "oneOf": [
+                                  {
+                                    "type": "object",
+                                    "additionalProperties": false,
+                                    "required": ["source", "value"],
+                                    "properties": {
+                                      "source": {
+                                        "const": "fixed"
+                                      },
+                                      "value": {
+                                        "type": "string",
+                                        "pattern": "^(?:[0-9]{8}|[0-9]{5}-[0-9]{3})(?![\\s\\S])"
+                                      }
+                                    }
+                                  },
+                                  {
+                                    "type": "object",
+                                    "additionalProperties": false,
+                                    "required": ["source", "fieldPath"],
+                                    "properties": {
+                                      "source": {
+                                        "const": "event"
+                                      },
+                                      "fieldPath": {
+                                        "type": "string",
+                                        "maxLength": 256,
+                                        "pattern": "^(?!(?:.*\\.)?(?:__proto__|prototype|constructor)(?:\\.|(?![\\s\\S])))[A-Za-z_][A-Za-z0-9_]{0,63}(?:\\.[A-Za-z_][A-Za-z0-9_]{0,63}){0,7}(?![\\s\\S])"
+                                      }
+                                    }
+                                  }
+                                ]
+                              }
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "allOf": [
+                    {
+                      "contains": {
+                        "properties": {
+                          "kind": {
+                            "const": "trigger"
+                          }
+                        },
+                        "required": ["kind"]
+                      }
+                    },
+                    {
+                      "contains": {
+                        "properties": {
+                          "kind": {
+                            "const": "condition"
+                          }
+                        },
+                        "required": ["kind"]
+                      }
+                    },
+                    {
+                      "contains": {
+                        "properties": {
+                          "kind": {
+                            "const": "action"
+                          }
+                        },
+                        "required": ["kind"]
+                      }
+                    },
+                    {
+                      "contains": {
+                        "properties": {
+                          "kind": {
+                            "const": "end"
+                          }
+                        },
+                        "required": ["kind"]
+                      }
+                    },
+                    {
+                      "contains": {
+                        "properties": {
+                          "kind": {
+                            "const": "lookup"
+                          }
+                        },
+                        "required": ["kind"]
+                      }
+                    }
+                  ]
+                },
+                "edges": {
+                  "type": "array",
+                  "minItems": 5,
+                  "maxItems": 5,
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["source", "target"],
+                    "properties": {
+                      "source": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}(?![\\s\\S])"
+                      },
+                      "target": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}(?![\\s\\S])"
+                      },
+                      "sourcePort": {
+                        "enum": ["TRUE", "FALSE"]
+                      }
+                    }
+                  },
+                  "anyOf": [
+                    {
+                      "items": [
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "TRUE"
+                            }
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "FALSE"
+                            }
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "items": [
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "TRUE"
+                            }
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "FALSE"
+                            }
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "items": [
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "TRUE"
+                            }
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "FALSE"
+                            }
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "items": [
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "TRUE"
+                            }
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "FALSE"
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "items": [
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "FALSE"
+                            }
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "TRUE"
+                            }
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "items": [
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "TRUE"
+                            }
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "FALSE"
+                            }
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "items": [
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "TRUE"
+                            }
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "FALSE"
+                            }
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "items": [
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "TRUE"
+                            }
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "FALSE"
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "items": [
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "FALSE"
+                            }
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "TRUE"
+                            }
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "items": [
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "FALSE"
+                            }
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "TRUE"
+                            }
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "items": [
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "TRUE"
+                            }
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "FALSE"
+                            }
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "items": [
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "TRUE"
+                            }
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "FALSE"
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "items": [
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "FALSE"
+                            }
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "TRUE"
+                            }
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "items": [
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "FALSE"
+                            }
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "TRUE"
+                            }
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "items": [
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "FALSE"
+                            }
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "TRUE"
+                            }
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "items": [
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "TRUE"
+                            }
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "FALSE"
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "items": [
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "FALSE"
+                            }
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "TRUE"
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "items": [
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "FALSE"
+                            }
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "TRUE"
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "items": [
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "FALSE"
+                            }
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "TRUE"
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "items": [
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "FALSE"
+                            }
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "TRUE"
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              }
             }
           ]
         }
@@ -1769,6 +4107,28 @@
                 "properties": {
                   "version": {
                     "const": 1
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "schemaVersion": {
+                "const": 3
+              }
+            },
+            "required": ["schemaVersion"]
+          },
+          "then": {
+            "required": ["graph"],
+            "properties": {
+              "graph": {
+                "properties": {
+                  "version": {
+                    "const": 3
                   }
                 }
               }
@@ -2657,6 +5017,1164 @@
                   ]
                 }
               }
+            },
+            {
+              "description": "Draft-07 cannot enforce ID uniqueness, step references or edge-to-node topology; validate graph-v3 semantics before use.",
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["version", "nodes", "edges"],
+              "properties": {
+                "version": {
+                  "const": 3
+                },
+                "nodes": {
+                  "type": "array",
+                  "minItems": 5,
+                  "maxItems": 5,
+                  "items": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": ["id", "kind", "type", "position"],
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}(?![\\s\\S])"
+                          },
+                          "kind": {
+                            "const": "trigger"
+                          },
+                          "type": {
+                            "const": "receipt.v1"
+                          },
+                          "position": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": ["x", "y"],
+                            "properties": {
+                              "x": {
+                                "type": "number",
+                                "minimum": -10000,
+                                "maximum": 10000
+                              },
+                              "y": {
+                                "type": "number",
+                                "minimum": -10000,
+                                "maximum": 10000
+                              }
+                            }
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "id",
+                          "kind",
+                          "type",
+                          "position",
+                          "config"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}(?![\\s\\S])"
+                          },
+                          "kind": {
+                            "const": "condition"
+                          },
+                          "type": {
+                            "const": "condition.v2"
+                          },
+                          "position": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": ["x", "y"],
+                            "properties": {
+                              "x": {
+                                "type": "number",
+                                "minimum": -10000,
+                                "maximum": 10000
+                              },
+                              "y": {
+                                "type": "number",
+                                "minimum": -10000,
+                                "maximum": 10000
+                              }
+                            }
+                          },
+                          "config": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": ["input", "operator"],
+                            "properties": {
+                              "operator": {
+                                "type": "string"
+                              },
+                              "expectedType": {
+                                "type": "string"
+                              },
+                              "expectedValue": {},
+                              "input": {
+                                "oneOf": [
+                                  {
+                                    "type": "object",
+                                    "additionalProperties": false,
+                                    "required": ["source", "fieldPath"],
+                                    "properties": {
+                                      "source": {
+                                        "const": "event"
+                                      },
+                                      "fieldPath": {
+                                        "type": "string",
+                                        "maxLength": 256,
+                                        "pattern": "^(?!(?:.*\\.)?(?:__proto__|prototype|constructor)(?:\\.|(?![\\s\\S])))[A-Za-z_][A-Za-z0-9_]{0,63}(?:\\.[A-Za-z_][A-Za-z0-9_]{0,63}){0,7}(?![\\s\\S])"
+                                      }
+                                    }
+                                  },
+                                  {
+                                    "type": "object",
+                                    "additionalProperties": false,
+                                    "required": [
+                                      "source",
+                                      "nodeId",
+                                      "fieldPath"
+                                    ],
+                                    "properties": {
+                                      "source": {
+                                        "const": "step"
+                                      },
+                                      "nodeId": {
+                                        "type": "string",
+                                        "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}(?![\\s\\S])"
+                                      },
+                                      "fieldPath": {
+                                        "type": "string",
+                                        "maxLength": 256,
+                                        "pattern": "^(?!(?:.*\\.)?(?:__proto__|prototype|constructor)(?:\\.|(?![\\s\\S])))[A-Za-z_][A-Za-z0-9_]{0,63}(?:\\.[A-Za-z_][A-Za-z0-9_]{0,63}){0,7}(?![\\s\\S])"
+                                      }
+                                    }
+                                  }
+                                ]
+                              }
+                            },
+                            "oneOf": [
+                              {
+                                "properties": {
+                                  "operator": {
+                                    "const": "exists"
+                                  }
+                                },
+                                "not": {
+                                  "anyOf": [
+                                    {
+                                      "required": ["expectedType"]
+                                    },
+                                    {
+                                      "required": ["expectedValue"]
+                                    }
+                                  ]
+                                }
+                              },
+                              {
+                                "required": ["expectedType", "expectedValue"],
+                                "properties": {
+                                  "operator": {
+                                    "enum": ["equals", "not_equals"]
+                                  },
+                                  "expectedType": {
+                                    "const": "null"
+                                  },
+                                  "expectedValue": {
+                                    "type": "null"
+                                  }
+                                }
+                              },
+                              {
+                                "required": ["expectedType", "expectedValue"],
+                                "properties": {
+                                  "operator": {
+                                    "enum": ["equals", "not_equals"]
+                                  },
+                                  "expectedType": {
+                                    "const": "boolean"
+                                  },
+                                  "expectedValue": {
+                                    "type": "boolean"
+                                  }
+                                }
+                              },
+                              {
+                                "required": ["expectedType", "expectedValue"],
+                                "properties": {
+                                  "operator": {
+                                    "enum": [
+                                      "equals",
+                                      "not_equals",
+                                      "greater_than",
+                                      "less_than"
+                                    ]
+                                  },
+                                  "expectedType": {
+                                    "const": "number"
+                                  },
+                                  "expectedValue": {
+                                    "type": "number"
+                                  }
+                                }
+                              },
+                              {
+                                "required": ["expectedType", "expectedValue"],
+                                "properties": {
+                                  "operator": {
+                                    "enum": ["equals", "not_equals", "contains"]
+                                  },
+                                  "expectedType": {
+                                    "const": "string"
+                                  },
+                                  "expectedValue": {
+                                    "type": "string",
+                                    "maxLength": 1024,
+                                    "pattern": "^(?:[^\\u0000\\uD800-\\uDFFF]|[\\uD800-\\uDBFF][\\uDC00-\\uDFFF])*(?![\\s\\S])"
+                                  }
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": ["id", "kind", "type", "position"],
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}(?![\\s\\S])"
+                          },
+                          "kind": {
+                            "const": "action"
+                          },
+                          "type": {
+                            "const": "record-receipt.v1"
+                          },
+                          "position": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": ["x", "y"],
+                            "properties": {
+                              "x": {
+                                "type": "number",
+                                "minimum": -10000,
+                                "maximum": 10000
+                              },
+                              "y": {
+                                "type": "number",
+                                "minimum": -10000,
+                                "maximum": 10000
+                              }
+                            }
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": ["id", "kind", "type", "position"],
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}(?![\\s\\S])"
+                          },
+                          "kind": {
+                            "const": "end"
+                          },
+                          "type": {
+                            "const": "end.v1"
+                          },
+                          "position": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": ["x", "y"],
+                            "properties": {
+                              "x": {
+                                "type": "number",
+                                "minimum": -10000,
+                                "maximum": 10000
+                              },
+                              "y": {
+                                "type": "number",
+                                "minimum": -10000,
+                                "maximum": 10000
+                              }
+                            }
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "id",
+                          "kind",
+                          "type",
+                          "position",
+                          "config"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}(?![\\s\\S])"
+                          },
+                          "kind": {
+                            "const": "lookup"
+                          },
+                          "type": {
+                            "const": "viacep-address.v1"
+                          },
+                          "position": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": ["x", "y"],
+                            "properties": {
+                              "x": {
+                                "type": "number",
+                                "minimum": -10000,
+                                "maximum": 10000
+                              },
+                              "y": {
+                                "type": "number",
+                                "minimum": -10000,
+                                "maximum": 10000
+                              }
+                            }
+                          },
+                          "config": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": ["cep"],
+                            "properties": {
+                              "cep": {
+                                "oneOf": [
+                                  {
+                                    "type": "object",
+                                    "additionalProperties": false,
+                                    "required": ["source", "value"],
+                                    "properties": {
+                                      "source": {
+                                        "const": "fixed"
+                                      },
+                                      "value": {
+                                        "type": "string",
+                                        "pattern": "^(?:[0-9]{8}|[0-9]{5}-[0-9]{3})(?![\\s\\S])"
+                                      }
+                                    }
+                                  },
+                                  {
+                                    "type": "object",
+                                    "additionalProperties": false,
+                                    "required": ["source", "fieldPath"],
+                                    "properties": {
+                                      "source": {
+                                        "const": "event"
+                                      },
+                                      "fieldPath": {
+                                        "type": "string",
+                                        "maxLength": 256,
+                                        "pattern": "^(?!(?:.*\\.)?(?:__proto__|prototype|constructor)(?:\\.|(?![\\s\\S])))[A-Za-z_][A-Za-z0-9_]{0,63}(?:\\.[A-Za-z_][A-Za-z0-9_]{0,63}){0,7}(?![\\s\\S])"
+                                      }
+                                    }
+                                  }
+                                ]
+                              }
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "allOf": [
+                    {
+                      "contains": {
+                        "properties": {
+                          "kind": {
+                            "const": "trigger"
+                          }
+                        },
+                        "required": ["kind"]
+                      }
+                    },
+                    {
+                      "contains": {
+                        "properties": {
+                          "kind": {
+                            "const": "condition"
+                          }
+                        },
+                        "required": ["kind"]
+                      }
+                    },
+                    {
+                      "contains": {
+                        "properties": {
+                          "kind": {
+                            "const": "action"
+                          }
+                        },
+                        "required": ["kind"]
+                      }
+                    },
+                    {
+                      "contains": {
+                        "properties": {
+                          "kind": {
+                            "const": "end"
+                          }
+                        },
+                        "required": ["kind"]
+                      }
+                    },
+                    {
+                      "contains": {
+                        "properties": {
+                          "kind": {
+                            "const": "lookup"
+                          }
+                        },
+                        "required": ["kind"]
+                      }
+                    }
+                  ]
+                },
+                "edges": {
+                  "type": "array",
+                  "minItems": 5,
+                  "maxItems": 5,
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["source", "target"],
+                    "properties": {
+                      "source": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}(?![\\s\\S])"
+                      },
+                      "target": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}(?![\\s\\S])"
+                      },
+                      "sourcePort": {
+                        "enum": ["TRUE", "FALSE"]
+                      }
+                    }
+                  },
+                  "anyOf": [
+                    {
+                      "items": [
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "TRUE"
+                            }
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "FALSE"
+                            }
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "items": [
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "TRUE"
+                            }
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "FALSE"
+                            }
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "items": [
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "TRUE"
+                            }
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "FALSE"
+                            }
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "items": [
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "TRUE"
+                            }
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "FALSE"
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "items": [
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "FALSE"
+                            }
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "TRUE"
+                            }
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "items": [
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "TRUE"
+                            }
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "FALSE"
+                            }
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "items": [
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "TRUE"
+                            }
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "FALSE"
+                            }
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "items": [
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "TRUE"
+                            }
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "FALSE"
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "items": [
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "FALSE"
+                            }
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "TRUE"
+                            }
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "items": [
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "FALSE"
+                            }
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "TRUE"
+                            }
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "items": [
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "TRUE"
+                            }
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "FALSE"
+                            }
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "items": [
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "TRUE"
+                            }
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "FALSE"
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "items": [
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "FALSE"
+                            }
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "TRUE"
+                            }
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "items": [
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "FALSE"
+                            }
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "TRUE"
+                            }
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "items": [
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "FALSE"
+                            }
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "TRUE"
+                            }
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "items": [
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "TRUE"
+                            }
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "FALSE"
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "items": [
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "FALSE"
+                            }
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "TRUE"
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "items": [
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "FALSE"
+                            }
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "TRUE"
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "items": [
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "FALSE"
+                            }
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "TRUE"
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "items": [
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "not": {
+                            "required": ["sourcePort"]
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "FALSE"
+                            }
+                          }
+                        },
+                        {
+                          "required": ["sourcePort"],
+                          "properties": {
+                            "sourcePort": {
+                              "const": "TRUE"
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              }
             }
           ]
         }
@@ -2699,6 +6217,28 @@
                 "properties": {
                   "version": {
                     "const": 1
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "schemaVersion": {
+                "const": 3
+              }
+            },
+            "required": ["schemaVersion"]
+          },
+          "then": {
+            "required": ["graph"],
+            "properties": {
+              "graph": {
+                "properties": {
+                  "version": {
+                    "const": 3
                   }
                 }
               }
