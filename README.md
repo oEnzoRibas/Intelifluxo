@@ -13,6 +13,8 @@ O projeto combina uma aplicação executável com uma experiência documentada d
 
 [Demonstração](#demonstração-real) · [Arquitetura](#arquitetura-da-aplicação) · [Agentes e MCP](#ia-agentes-e-mcp) · [Executar](#executar-localmente) · [Validação](#validação) · [Limitações](#limitações-e-próximos-passos)
 
+**Formulários conectados:** [crie vários formulários pela interface](docs/forms.md), publique o link local e dispare uma automação com o CEP de cada resposta. A opção **Conectar Google Forms** permite cadastrar links e mapeamentos futuros e gerar um script autenticado; requer autorização no Google e entrada HTTPS pública configuradas pelo usuário.
+
 ## O que foi construído
 
 | Capacidade                  | Implementação e evidência                                                                                                                                                                |

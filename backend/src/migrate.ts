@@ -167,6 +167,18 @@ try {
       "utf8",
     ),
   );
+  await pool.query(
+    await readFile(
+      new URL("../migrations/019_forms.sql", import.meta.url),
+      "utf8",
+    ),
+  );
+  await pool.query(
+    await readFile(
+      new URL("../migrations/020_google_forms.sql", import.meta.url),
+      "utf8",
+    ),
+  );
   console.log("migration applied");
 } finally {
   await pool.end();

@@ -2,6 +2,8 @@ import Fastify, { type FastifyError } from "fastify";
 import type pg from "pg";
 import { automationRoutes } from "./automations.js";
 import { accept } from "./accept.js";
+import { formsRoutes } from "./forms.js";
+import { googleFormsRoutes } from "./google-forms.js";
 import { requestSchema, validEventData, type Input } from "./contract.js";
 import { executionRoutes } from "./executions.js";
 import { overviewRoute } from "./overview.js";
@@ -30,6 +32,17 @@ export function api(
     bodyLimit: 8192,
     ajv: { customOptions: { removeAdditional: false, coerceTypes: false } },
   });
+  formsRoutes(app, pool, {
+    snapshots: snapshotsEnabled,
+    conditions: conditionsEnabled,
+    writes: viacepEnabled,
+    external: viacepExternalEnabled,
+  });
+  googleFormsRoutes(
+    app,
+    pool,
+    snapshotsEnabled && conditionsEnabled && viacepEnabled,
+  );
   app.register(async (automations) => {
     automations.setErrorHandler((error, _request, reply) => {
       const validation = (error as FastifyError).validation;

@@ -1,5 +1,6 @@
 import Overview from "./Overview";
 import Automations from "./Automations";
+import Forms from "./Forms";
 import {
   useEffect,
   useRef,
@@ -21,9 +22,12 @@ function Panel({ title, children }: { title: string; children: ReactNode }) {
 }
 function App() {
   const [route, setRoute] = useState(window.location.hash);
-  const [view, setView] = useState<"overview" | "explorer" | "automations">(
-    () =>
-      window.location.hash.startsWith("#automations")
+  const [view, setView] = useState<
+    "overview" | "explorer" | "automations" | "forms"
+  >(() =>
+    window.location.hash.startsWith("#forms")
+      ? "forms"
+      : window.location.hash.startsWith("#automations")
         ? "automations"
         : window.location.hash.startsWith("#explorer")
           ? "explorer"
@@ -32,13 +36,15 @@ function App() {
   const viewRef = useRef(view);
   const menuRef = useRef<HTMLDetailsElement>(null);
   const pageTitle =
-    view === "overview"
-      ? "Visão geral"
-      : view === "explorer"
-        ? "Explorador de eventos"
-        : /\/builder$/i.test(route)
-          ? "Editor de fluxo"
-          : "Automações";
+    view === "forms"
+      ? "Formulários"
+      : view === "overview"
+        ? "Visão geral"
+        : view === "explorer"
+          ? "Explorador de eventos"
+          : /\/builder$/i.test(route)
+            ? "Editor de fluxo"
+            : "Automações";
   useEffect(() => {
     document.title = `${pageTitle} | InteliFluxo`;
   }, [pageTitle]);
@@ -54,13 +60,16 @@ function App() {
   });
   useEffect(() => {
     function syncView() {
-      const next = window.location.hash.startsWith("#automations")
-        ? "automations"
-        : window.location.hash.startsWith("#explorer")
-          ? "explorer"
-          : window.location.hash === "#overview" || window.location.hash === ""
-            ? "overview"
-            : null;
+      const next = window.location.hash.startsWith("#forms")
+        ? "forms"
+        : window.location.hash.startsWith("#automations")
+          ? "automations"
+          : window.location.hash.startsWith("#explorer")
+            ? "explorer"
+            : window.location.hash === "#overview" ||
+                window.location.hash === ""
+              ? "overview"
+              : null;
       if (!next) return;
       if (
         viewRef.current === "explorer" &&
@@ -246,6 +255,8 @@ function App() {
       </div>
     </Panel>
   );
+  if (view === "forms" && /\/fill$/.test(route))
+    return <Forms key={route} route={route} />;
   return (
     <>
       <a className="skip" href="#main">
@@ -302,6 +313,12 @@ function App() {
                   Event Explorer
                 </a>
               </details>
+              <a
+                href="#forms"
+                aria-current={view === "forms" ? "page" : undefined}
+              >
+                Formulários
+              </a>
             </nav>
           </details>
           <p className="side-note">
@@ -318,7 +335,9 @@ function App() {
             <span className="environment">Ambiente local</span>
           </header>
           <main id="main" tabIndex={-1}>
-            {view === "automations" ? (
+            {view === "forms" ? (
+              <Forms key={route} route={route} />
+            ) : view === "automations" ? (
               <Automations route={route} />
             ) : view === "overview" ? (
               <Overview />
