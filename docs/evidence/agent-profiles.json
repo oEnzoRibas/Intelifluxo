@@ -1,0 +1,82 @@
+{
+  "capturedOn": "2026-11-17",
+  "sourceCheckout": "Intelifluxo (checkout de origem, distinto da worktree de implementação)",
+  "sourceHead": "39e9355dedda77d3caef9a224b55d71ab3c111f4",
+  "sourceState": "Perfis lidos do working tree; o HEAD não comprova que alterações locais estejam commitadas.",
+  "purpose": "Evidência histórica; não instala nem executa agentes.",
+  "profiles": [
+    {
+      "name": "architect",
+      "source": ".opencode/agents/architect.md",
+      "snapshot": "agent-profiles/architect.md",
+      "sha256": "8b32d0e552b97414e57091213e3800856f02928331e954d856f26cc5cfa5d9a0",
+      "model": "openai/gpt-6-astra",
+      "mode": "subagent"
+    },
+    {
+      "name": "backend-engineer",
+      "source": ".opencode/agents/backend-engineer.md",
+      "snapshot": "agent-profiles/backend-engineer.md",
+      "sha256": "ed5c07460787eccad78a46daa43c54ba706fcbb88d3e7cd4021112fbee7c8a88",
+      "model": "openai/gpt-6.1-terra",
+      "mode": "subagent"
+    },
+    {
+      "name": "code-reviewer",
+      "source": ".opencode/agents/code-reviewer.md",
+      "snapshot": "agent-profiles/code-reviewer.md",
+      "sha256": "e69963a2d4c090987dd17c51b467024175cf782fc0436799820df7243e692366",
+      "model": "openai/gpt-6.1-terra#low",
+      "mode": "subagent"
+    },
+    {
+      "name": "designer",
+      "source": ".opencode/agents/designer.md",
+      "snapshot": "agent-profiles/designer.md",
+      "sha256": "275b6f2843d76e7cc7aaff39c2f988bfd1ad77abd2579529f74d7c2747b6675a",
+      "model": "openai/gpt-6.1-sol",
+      "mode": "subagent"
+    },
+    {
+      "name": "documentation",
+      "source": ".opencode/agents/documentation.md",
+      "snapshot": "agent-profiles/documentation.md",
+      "sha256": "0fee9ea3632a1747d35b6c0708461810c27d0bf2936744b23b56b2938bbbf647",
+      "model": "openai/gpt-6.1-terra",
+      "mode": "subagent"
+    },
+    {
+      "name": "frontend-engineer",
+      "source": ".opencode/agents/frontend-engineer.md",
+      "snapshot": "agent-profiles/frontend-engineer.md",
+      "sha256": "ade11397b2f96ef8da544a015165ed4216f901e8a508653988239456d89db34d",
+      "model": "openai/gpt-6.1-terra",
+      "mode": "subagent"
+    },
+    {
+      "name": "intelifluxo-lead",
+      "source": ".opencode/agents/intelifluxo-lead.md",
+      "snapshot": "agent-profiles/intelifluxo-lead.md",
+      "sha256": "d67d50f991b7176af91a69ab21211581e99528f9cab84c599c5c68776a1cce7c",
+      "model": "openai/gpt-6.1-terra",
+      "mode": "primary"
+    },
+    {
+      "name": "qa-engineer",
+      "source": ".opencode/agents/qa-engineer.md",
+      "snapshot": "agent-profiles/qa-engineer.md",
+      "sha256": "4323eb0142ceba317d5166dedec8967c9e754f9f3aa46db209532c61ece0c816",
+      "model": "openai/gpt-6.1-terra",
+      "mode": "subagent"
+    },
+    {
+      "name": "researcher",
+      "source": ".opencode/agents/researcher.md",
+      "snapshot": "agent-profiles/researcher.md",
+      "sha256": "dab931320d7da920d194ea66764ce33bc0d5dece3ea63a4520a67f4f36f72611",
+      "model": "openai/gpt-6.1-terra",
+      "mode": "subagent"
+    }
+  ],
+  "mcpConfigCopied": false
+}

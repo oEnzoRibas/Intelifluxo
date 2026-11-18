@@ -1,5 +1,11 @@
 import WorkflowBuilder from "./WorkflowBuilder";
+import TestEventPanel from "./TestEventPanel";
 import AutomationDashboard from "./AutomationDashboard";
+import { automationRoute } from "./automation-route";
+import { createViaCepTemplate } from "./viacep-graph";
+import { useRuntimeStatus } from "./use-runtime-status";
+import ViaCepResult from "./ViaCepResult";
+import { conditionDraft, defaultGraph } from "./workflow-graph";
 import {
   useCallback,
   useEffect,
@@ -10,6 +16,7 @@ import {
 import { ApiError, validId } from "./api";
 import {
   ConflictError,
+  UnsupportedDefinitionError,
   ValidationError,
   createDefinition,
   getDefinition,
@@ -25,13 +32,28 @@ type State<T> =
   | { kind: "ready"; data: T }
   | { kind: "error"; message: string };
 const message = (e: unknown) =>
-  e instanceof ApiError && e.kind === "invalid"
-    ? "The service returned an unexpected response."
-    : e instanceof ApiError && e.kind === "not-found"
-      ? "This automation was not found."
-      : "The automation service is unavailable. Try again.";
+  e instanceof UnsupportedDefinitionError
+    ? "Versão de definição não compatível. Somente leitura: não é possível alterá-la."
+    : e instanceof ApiError && e.kind === "invalid"
+      ? "O serviço retornou uma resposta inesperada."
+      : e instanceof ApiError && e.kind === "not-found"
+        ? "Automação não encontrada."
+        : "O serviço de automações está indisponível. Tente novamente.";
 export default function Automations({ route }: { route: string }) {
-  const [scope, setScope] = useState("");
+  const { status: runtime, effective } = useRuntimeStatus();
+  const viacepWritesAllowed =
+    !!runtime &&
+    !effective.stale &&
+    runtime.capabilities.viacepWrites &&
+    runtime.capabilities.conditionsWrites;
+  const viacepAllowed =
+    viacepWritesAllowed && !!runtime?.capabilities.viacepExternalExecution;
+  const conditionWritesAllowed =
+    !!runtime && !effective.stale && runtime.capabilities.conditionsWrites;
+  const [createKind, setCreateKind] = useState<"condition" | "viacep">(
+    "condition",
+  );
+  const scope = "local"; // Local routing context.
   const [name, setName] = useState("");
   const [validation, setValidation] = useState("");
   const [detail, setDetail] = useState<State<Definition>>({ kind: "loading" });
@@ -53,14 +75,11 @@ export default function Automations({ route }: { route: string }) {
     }
     setBuilderBlocked(blocked);
   }, []);
-  const scopeInput = useRef<HTMLInputElement>(null);
   const nameInput = useRef<HTMLInputElement>(null);
   const detailHeading = useRef<HTMLHeadingElement>(null);
   const focusDetailOnRecovery = useRef(false);
   const historyHeading = useRef<HTMLHeadingElement>(null);
-  const id = route.startsWith("#automations/")
-    ? route.slice("#automations/".length)
-    : "";
+  const { id, builder } = automationRoute(route);
   const create = id === "create";
   // A hash can change through browser history or a direct link, not just our
   // list links. Never show the previous route's snapshot under a new ID.
@@ -139,11 +158,18 @@ export default function Automations({ route }: { route: string }) {
   }
   async function createAutomation(e: FormEvent) {
     e.preventDefault();
+    if (pending) return;
+    if (createKind === "condition" && !conditionWritesAllowed) {
+      setValidation("A criação de condições está indisponível neste ambiente.");
+      return;
+    }
+    if (createKind === "viacep" && !viacepWritesAllowed) {
+      setValidation("A criação ViaCEP está indisponível neste ambiente.");
+      return;
+    }
     if (!validText(scope, 128) || !validText(name, 200)) {
-      setValidation(
-        "Enter a valid scope and name (up to 128 and 200 characters respectively).",
-      );
-      (!validText(scope, 128) ? scopeInput : nameInput).current?.focus();
+      setValidation("Informe um nome válido com até 200 caracteres.");
+      nameInput.current?.focus();
       return;
     }
     setValidation("");
@@ -152,16 +178,28 @@ export default function Automations({ route }: { route: string }) {
     const controller = new AbortController();
     mutation.current = controller;
     try {
-      const d = await createDefinition(scope, name, controller.signal);
+      const d = await createDefinition(
+        scope,
+        name,
+        controller.signal,
+        createKind === "viacep"
+          ? createViaCepTemplate()
+          : conditionDraft(defaultGraph(), false, {
+              fieldPath: "message",
+              operator: "contains",
+              expectedType: "string",
+              expectedValue: "pedido",
+            }),
+      );
       if (!controller.signal.aborted) {
         setDetail({ kind: "loading" });
         setHistory({ kind: "loading" });
-        window.location.hash = `#automations/${d.id}`;
+        window.location.hash = `#automations/${d.id}/builder`;
       }
     } catch (err) {
       if (!controller.signal.aborted)
         setMutationError(
-          `${message(err)} Creation may have succeeded; check the list before retrying.`,
+          `${message(err)} A criação pode ter sido concluída; consulte a lista antes de tentar novamente.`,
         );
     } finally {
       if (!controller.signal.aborted) {
@@ -173,7 +211,7 @@ export default function Automations({ route }: { route: string }) {
   async function toggle(d: Definition) {
     if (
       !window.confirm(
-        `${d.active ? "Deactivate" : "Activate"} ${d.name} at revision ${d.revision}?`,
+        `${d.active ? "Desativar" : "Ativar"} ${d.name} na revisão ${d.revision}?`,
       )
     )
       return;
@@ -193,17 +231,25 @@ export default function Automations({ route }: { route: string }) {
       if (!controller.signal.aborted) {
         if (err instanceof ConflictError) {
           setMutationError(
-            "Revision conflict: this revision is stale. Reload the latest definition before trying again.",
+            "Conflito de revisão: a definição foi alterada. Recarregue antes de tentar novamente.",
           );
         } else if (err instanceof ValidationError) {
           setMutationError(
-            err.issues.some((issue) => issue.code === "conditions_disabled")
-              ? "Condition writes are disabled (CONDITIONS_WRITES_ENABLED). The update was rejected."
-              : "The service rejected this update. Reload before trying again.",
+            err.issues.some(
+              (issue) => issue.code === "viacep_external_execution_disabled",
+            )
+              ? "Execução externa ViaCEP indisponível. Solicite autorização antes de ativar."
+              : err.issues.some((issue) => issue.code === "viacep_disabled")
+                ? "A edição ViaCEP está indisponível neste ambiente."
+                : err.issues.some(
+                      (issue) => issue.code === "conditions_disabled",
+                    )
+                  ? "A edição de condições está indisponível neste ambiente."
+                  : "O serviço rejeitou a atualização. Recarregue antes de tentar novamente.",
           );
         } else
           setMutationError(
-            `${message(err)} The update may have succeeded; reload before retrying.`,
+            `${message(err)} A atualização pode ter sido concluída; recarregue antes de tentar novamente.`,
           );
       }
     } finally {
@@ -224,26 +270,84 @@ export default function Automations({ route }: { route: string }) {
       {id &&
         (create ? (
           <>
-            <h1>Create Automation</h1>
-            <form className="panel" onSubmit={createAutomation} noValidate>
-              <label htmlFor="create-scope">Scope (required)</label>
-              <input
-                id="create-scope"
-                ref={scopeInput}
-                value={scope}
-                onChange={(e) => setScope(e.target.value)}
-                aria-invalid={!!validation && !validText(scope, 128)}
-                aria-describedby={
-                  validation && !validText(scope, 128)
-                    ? "create-error"
-                    : undefined
-                }
-              />
-              <label htmlFor="automation-name">Name (required)</label>
+            <h1>Criar automação</h1>
+            <p>
+              Escolha um modelo, configure as etapas e acompanhe cada teste.
+            </p>
+            <form
+              className="panel automation-create"
+              onSubmit={createAutomation}
+              noValidate
+            >
+              <fieldset className="automation-type-options" disabled={pending}>
+                <legend>Tipo de automação</legend>
+                <label>
+                  <input
+                    type="radio"
+                    name="create-kind"
+                    aria-label="Condição guiada"
+                    checked={createKind === "condition"}
+                    disabled={!conditionWritesAllowed}
+                    onChange={() => setCreateKind("condition")}
+                  />{" "}
+                  <span>
+                    <strong>Condição guiada</strong>
+                    <small>
+                      Verifique um dado do evento e registre um recibo quando a
+                      condição for atendida.
+                    </small>
+                  </span>
+                </label>
+                <label>
+                  <input
+                    type="radio"
+                    name="create-kind"
+                    aria-label="Consultar CEP e decidir"
+                    disabled={!viacepWritesAllowed}
+                    aria-describedby={
+                      !viacepWritesAllowed
+                        ? "viacep-create-unavailable"
+                        : undefined
+                    }
+                    checked={createKind === "viacep"}
+                    onChange={() => setCreateKind("viacep")}
+                  />{" "}
+                  <span>
+                    <strong>Consultar CEP e decidir</strong>
+                    <small>
+                      Busque um endereço no ViaCEP e decida a partir do estado,
+                      cidade ou outro campo.
+                    </small>
+                  </span>
+                </label>
+              </fieldset>
+              {createKind === "condition" && (
+                <p>
+                  {conditionWritesAllowed
+                    ? 'Exemplo inicial: registrar um recibo quando a mensagem contém "pedido". Você pode alterar a regra no editor.'
+                    : "A criação de condições está indisponível ou aguardando confirmação do ambiente."}
+                </p>
+              )}
+              {!viacepWritesAllowed && (
+                <p id="viacep-create-unavailable">
+                  A criação ViaCEP está indisponível neste ambiente ou o estado
+                  do aplicativo não está atualizado.
+                </p>
+              )}
+              {createKind === "viacep" && (
+                <p>
+                  Exemplo: CEP fixo 01001000 e UF igual a SP. Revise a consulta
+                  e a condição antes de ativar.
+                </p>
+              )}
+              <p className="muted">Ambiente local · dados sintéticos</p>
+              <label htmlFor="automation-name">Nome da automação</label>
               <input
                 id="automation-name"
                 ref={nameInput}
                 value={name}
+                placeholder="Ex.: Validar endereço de entrega"
+                disabled={pending}
                 onChange={(e) => setName(e.target.value)}
                 aria-invalid={!!validation && !validText(name, 200)}
                 aria-describedby={
@@ -252,25 +356,10 @@ export default function Automations({ route }: { route: string }) {
                     : undefined
                 }
               />
+              <p>Escolha um nome que ajude a identificar esta automação.</p>
               <p>
-                Choose a name that helps operators identify this automation.
-              </p>
-              <div className="fixed-definition">
-                <p>
-                  Trigger · fixed
-                  <br />
-                  <strong>receipt.v1</strong>
-                </p>
-                <p>
-                  Action · fixed
-                  <br />
-                  <strong>record-receipt.v1</strong>
-                </p>
-              </div>
-              <h2>Created inactive</h2>
-              <p>
-                Creation does not activate the automation. Review its details
-                before activation.
+                A automação será criada desativada. Configure e salve antes de
+                ativar.
               </p>
               {validation && (
                 <p role="alert" id="create-error">
@@ -279,25 +368,50 @@ export default function Automations({ route }: { route: string }) {
               )}
               {mutationError && <p role="alert">{mutationError}</p>}
               <div className="form-row">
-                <button disabled={pending}>
-                  {pending ? "Creating…" : "Create inactive automation"}
+                <button
+                  className="primary-button"
+                  disabled={
+                    pending ||
+                    (createKind === "viacep"
+                      ? !viacepWritesAllowed
+                      : !conditionWritesAllowed)
+                  }
+                >
+                  {pending ? "Criando…" : "Criar desativada"}
                 </button>
-                <a href="#automations">Cancel</a>
+                <a href="#automations">Cancelar</a>
               </div>
             </form>
           </>
         ) : (
           <>
             <p>
-              <a href="#automations">← Automations</a>
+              <a
+                href="#automations"
+                onClick={(event) => {
+                  if (
+                    builderBlocked &&
+                    !window.confirm(
+                      "Descartar alterações locais e sair do editor?",
+                    )
+                  )
+                    event.preventDefault();
+                }}
+              >
+                ← Automações
+              </a>
             </p>
             <h1 ref={detailHeading} tabIndex={-1}>
-              Automation Details
+              {builder
+                ? detail.kind === "ready" && detail.data.schemaVersion === 3
+                  ? "Editor ViaCEP"
+                  : "Editor de condição"
+                : "Detalhes da automação"}
             </h1>
             {!validId(id) ? (
-              <p role="alert">Invalid automation ID.</p>
+              <p role="alert">Identificador de automação inválido.</p>
             ) : detail.kind === "loading" ? (
-              <p role="status">Loading automation…</p>
+              <p role="status">Carregando automação…</p>
             ) : detail.kind === "error" ? (
               <section className="panel">
                 <p role="alert">{detail.message}</p>
@@ -307,7 +421,7 @@ export default function Automations({ route }: { route: string }) {
                     reload();
                   }}
                 >
-                  Reload
+                  Recarregar
                 </button>
               </section>
             ) : (
@@ -315,28 +429,83 @@ export default function Automations({ route }: { route: string }) {
                 <section className="panel">
                   <h2>{detail.data.name}</h2>
                   <p>
-                    {detail.data.active ? "Active" : "Inactive"} · revision{" "}
+                    {detail.data.active ? "Ativa" : "Desativada"} · revisão{" "}
                     {detail.data.revision}
                   </p>
-                  <p>Scope: {detail.data.scope}</p>
-                  {refreshingDetail && (
-                    <p role="status">Refreshing automation.</p>
+                  {!builder && (
+                    <p>
+                      Contexto:{" "}
+                      {detail.data.scope === "local"
+                        ? "Ambiente local"
+                        : detail.data.scope}
+                    </p>
                   )}
-                  <p>
-                    Trigger: receipt.v1
-                    <br />
-                    Action: record-receipt.v1
-                  </p>
+                  {refreshingDetail && (
+                    <p role="status">Atualizando automação.</p>
+                  )}
+                  {!builder && (
+                    <p>
+                      <a href={`#automations/${id}/builder`}>
+                        {detail.data.schemaVersion === 3
+                          ? "Abrir editor ViaCEP"
+                          : "Abrir editor de condição"}
+                      </a>
+                    </p>
+                  )}
+                  {builder && (
+                    <p>
+                      <a
+                        href={`#automations/${id}`}
+                        onClick={(event) => {
+                          if (
+                            builderBlocked &&
+                            !window.confirm(
+                              "Descartar alterações locais e sair do editor?",
+                            )
+                          )
+                            event.preventDefault();
+                        }}
+                      >
+                        Testar na página da automação
+                      </a>{" "}
+                      ·{" "}
+                      {builderBlocked
+                        ? "Salve ou descarte as alterações antes de testar."
+                        : detail.data.active
+                          ? "Pronta para testar."
+                          : "Ative a automação antes de testar."}
+                    </p>
+                  )}
                   <button
-                    disabled={pending || !!mutationError || builderBlocked}
+                    disabled={
+                      pending ||
+                      !!mutationError ||
+                      builderBlocked ||
+                      (!detail.data.active &&
+                        detail.data.schemaVersion === 3 &&
+                        !viacepAllowed)
+                    }
                     onClick={() => toggle(detail.data)}
                   >
                     {pending
-                      ? "Saving…"
+                      ? "Salvando…"
                       : detail.data.active
-                        ? "Deactivate"
-                        : "Activate"}
+                        ? "Desativar"
+                        : "Ativar"}
                   </button>
+                  <button
+                    disabled={pending || builderBlocked || refreshingDetail}
+                    onClick={() => reload(true)}
+                  >
+                    Atualizar automação
+                  </button>
+                  {detail.data.schemaVersion === 3 && !viacepAllowed && (
+                    <p className="notice">
+                      Consulta externa indisponível neste ambiente. Configure e
+                      salve o fluxo; ativação e teste dependem da habilitação da
+                      execução ViaCEP.
+                    </p>
+                  )}
                   {mutationError && (
                     <>
                       <p role="alert">{mutationError}</p>
@@ -347,159 +516,202 @@ export default function Automations({ route }: { route: string }) {
                           reload();
                         }}
                       >
-                        Reload
+                        Recarregar
                       </button>
                     </>
                   )}
                 </section>
-                <WorkflowBuilder
-                  key={`${detail.data.id}-${detail.data.revision}`}
-                  definition={detail.data}
-                  onDirty={reportBuilderState}
-                  busy={pending || !!mutationError}
-                  onSaved={(updated) => {
-                    detailReadVersion.current++;
-                    setDetail({ kind: "ready", data: updated });
-                  }}
-                />
-                <section className="panel" aria-live="polite">
-                  <h2 ref={historyHeading} tabIndex={-1}>
-                    Execution history
-                  </h2>
-                  {history.kind === "loading" ? (
-                    <p>Loading history…</p>
-                  ) : history.kind === "error" ? (
-                    <>
-                      <p role="alert">{history.message}</p>
+                {builder && (
+                  <WorkflowBuilder
+                    key={`${detail.data.id}-${detail.data.revision}`}
+                    definition={detail.data}
+                    onDirty={reportBuilderState}
+                    busy={pending || !!mutationError}
+                    onSaved={(updated) => {
+                      detailReadVersion.current++;
+                      setDetail({ kind: "ready", data: updated });
+                    }}
+                  />
+                )}
+                {!builder && (
+                  <TestEventPanel
+                    key={detail.data.id}
+                    definition={detail.data}
+                    onExecutionTerminal={() => setHistoryRefresh((x) => x + 1)}
+                    blocked={
+                      builderBlocked ||
+                      pending ||
+                      !!mutationError ||
+                      refreshingDetail
+                    }
+                  />
+                )}
+                {!builder && (
+                  <>
+                    <section className="panel" aria-live="polite">
+                      <h2 ref={historyHeading} tabIndex={-1}>
+                        Histórico recente
+                      </h2>
+                      <p className="muted">
+                        Lista limitada a até 100 execuções; a ordem não é
+                        garantida.
+                      </p>
+                      {history.kind === "loading" ? (
+                        <p>Carregando histórico…</p>
+                      ) : history.kind === "error" ? (
+                        <>
+                          <p role="alert">{history.message}</p>
+                          <button
+                            disabled={pending}
+                            onClick={() => {
+                              historyHeading.current?.focus();
+                              setHistory({ kind: "loading" });
+                              setHistoryRefresh((x) => x + 1);
+                            }}
+                          >
+                            Tentar novamente
+                          </button>
+                        </>
+                      ) : history.data.length === 0 ? (
+                        <p>Nenhuma execução retornada nesta lista limitada.</p>
+                      ) : (
+                        <>
+                          <div className="table-wrap">
+                            <table>
+                              <thead>
+                                <tr>
+                                  <th>Status da execução</th>
+                                  <th>Revisão</th>
+                                  <th>Criada em · UTC</th>
+                                  <th>Resultado</th>
+                                  <th>Evento</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {history.data.map((x) => (
+                                  <tr key={x.id}>
+                                    <td data-label="Status da execução">
+                                      <strong>
+                                        {
+                                          {
+                                            accepted: "Recebida",
+                                            completed: "Concluída",
+                                            ignored: "Ignorada",
+                                            retry_scheduled:
+                                              "Nova tentativa agendada",
+                                            retry_released:
+                                              "Nova tentativa liberada",
+                                            blocked: "Bloqueada",
+                                          }[x.status]
+                                        }
+                                      </strong>
+                                    </td>
+                                    <td data-label="Revisão">{x.revision}</td>
+                                    <td data-label="Criada em · UTC">
+                                      {new Intl.DateTimeFormat("pt-BR", {
+                                        dateStyle: "short",
+                                        timeStyle: "medium",
+                                        timeZone: "UTC",
+                                      }).format(new Date(x.createdAt))}{" "}
+                                      UTC
+                                    </td>
+                                    <td data-label="Resultado">
+                                      {x.result?.kind ===
+                                      "viacep-condition-execution.v1" ? (
+                                        <ViaCepResult result={x.result} />
+                                      ) : x.result?.kind ===
+                                        "condition-execution.v1" ? (
+                                        <div
+                                          className={`execution-result execution-result--${x.result.action.status}`}
+                                        >
+                                          <div>
+                                            {x.result.decision
+                                              ? `Condição: ${x.result.decision.outcome === "TRUE" ? "verdadeira" : "falsa"}`
+                                              : "Decisão indisponível"}
+                                          </div>
+                                          <div>
+                                            Ação:{" "}
+                                            {
+                                              {
+                                                executed: "executada",
+                                                ignored: "ignorada",
+                                                pending: "pendente",
+                                                not_executed: "não executada",
+                                              }[x.result.action.status]
+                                            }
+                                          </div>
+                                          {x.result.failure && (
+                                            <div>Falha na execução</div>
+                                          )}
+                                        </div>
+                                      ) : x.result ? (
+                                        "Comprovante registrado"
+                                      ) : (
+                                        "Indisponível"
+                                      )}
+                                      <details>
+                                        <summary>Detalhes da execução</summary>
+                                        <p>ID do evento: {x.eventId}</p>
+                                        <p>Revisão utilizada: {x.revision}</p>
+                                        {x.result?.kind ===
+                                          "condition-execution.v1" &&
+                                          x.result.decision && (
+                                            <p>
+                                              Nó da condição:{" "}
+                                              {x.result.decision.nodeId}
+                                            </p>
+                                          )}
+                                        {x.result?.kind ===
+                                          "condition-execution.v1" &&
+                                          x.result.failure && (
+                                            <p>
+                                              Falha:{" "}
+                                              {x.result.failure.classification}{" "}
+                                              · {x.result.failure.code}
+                                              {x.result.failure.nodeId &&
+                                                ` · nó: ${x.result.failure.nodeId}`}
+                                            </p>
+                                          )}
+                                      </details>
+                                    </td>
+                                    <td data-label="Evento">
+                                      <a
+                                        href={`#explorer?eventId=${encodeURIComponent(x.eventId)}`}
+                                      >
+                                        Abrir evento
+                                      </a>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                          <p className="muted">
+                            Até 100 execuções; a API não oferece paginação,
+                            ordenação por mais recentes ou data de atualização.
+                            Atualize para consultar o estado atual.
+                          </p>
+                        </>
+                      )}
                       <button
-                        disabled={pending}
+                        disabled={pending || builderBlocked}
                         onClick={() => {
-                          historyHeading.current?.focus();
                           setHistory({ kind: "loading" });
                           setHistoryRefresh((x) => x + 1);
                         }}
                       >
-                        Retry
+                        Atualizar histórico
                       </button>
-                    </>
-                  ) : history.data.length === 0 ? (
-                    <p>No executions yet.</p>
-                  ) : (
-                    <>
-                      <div className="table-wrap">
-                        <table>
-                          <thead>
-                            <tr>
-                              <th>Event</th>
-                              <th>Execution status</th>
-                              <th>Revision</th>
-                              <th>Created · UTC</th>
-                              <th>Result</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {history.data.map((x) => (
-                              <tr key={x.id}>
-                                <td data-label="Event">
-                                  <a
-                                    href={`#explorer?eventId=${encodeURIComponent(x.eventId)}`}
-                                  >
-                                    {x.eventId}
-                                  </a>
-                                </td>
-                                <td data-label="Execution status">
-                                  {x.status.replaceAll("_", " ")}
-                                </td>
-                                <td data-label="Revision">{x.revision}</td>
-                                <td data-label="Created · UTC">
-                                  {x.createdAt}
-                                </td>
-                                <td data-label="Result">
-                                  {x.result?.kind ===
-                                  "condition-execution.v1" ? (
-                                    <div
-                                      className={`execution-result execution-result--${x.result.action.status}`}
-                                    >
-                                      <strong>
-                                        {x.result.decision
-                                          ? `Decision ${x.result.decision.outcome} → ${x.result.decision.targetNodeId}`
-                                          : "Decision unavailable"}
-                                      </strong>
-                                      <div>
-                                        Action:{" "}
-                                        {x.result.action.status.replaceAll(
-                                          "_",
-                                          " ",
-                                        )}
-                                        {x.result.action.nodeId
-                                          ? ` · ${x.result.action.nodeId}`
-                                          : ""}
-                                      </div>
-                                      {x.result.failure && (
-                                        <div>
-                                          Failure:{" "}
-                                          {x.result.failure.classification} ·{" "}
-                                          {x.result.failure.code}
-                                        </div>
-                                      )}
-                                      {(x.status === "retry_scheduled" ||
-                                        x.status === "retry_released") && (
-                                        <div>
-                                          Retry (event-level):{" "}
-                                          {x.status.replaceAll("_", " ")}
-                                        </div>
-                                      )}
-                                      <details>
-                                        <summary>Execution details</summary>
-                                        <p>Pinned revision: {x.revision}</p>
-                                        {x.result.decision && (
-                                          <p>
-                                            Condition node:{" "}
-                                            {x.result.decision.nodeId}
-                                          </p>
-                                        )}
-                                        {x.result.failure?.nodeId && (
-                                          <p>
-                                            Failure node:{" "}
-                                            {x.result.failure.nodeId}
-                                          </p>
-                                        )}
-                                      </details>
-                                    </div>
-                                  ) : x.result ? (
-                                    <pre>
-                                      {JSON.stringify(x.result, null, 2)}
-                                    </pre>
-                                  ) : (
-                                    "Not available"
-                                  )}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                      <p className="muted">
-                        Showing up to 100 executions; the API does not provide
-                        pagination or an updated timestamp. Refresh for a
-                        current snapshot.
+                    </section>
+                    <section className="panel">
+                      <h2>Revisões</h2>
+                      <p>
+                        O histórico de revisões não está disponível na API
+                        atual. Revisão atual: {detail.data.revision}.
                       </p>
-                    </>
-                  )}
-                  <button
-                    disabled={pending || builderBlocked}
-                    onClick={() => reload(true)}
-                  >
-                    Refresh
-                  </button>
-                </section>
-                <section className="panel">
-                  <h2>Revisions</h2>
-                  <p>
-                    Revision history is unavailable from the current API.
-                    Current revision: {detail.data.revision}.
-                  </p>
-                </section>
+                    </section>
+                  </>
+                )}
               </>
             )}
           </>

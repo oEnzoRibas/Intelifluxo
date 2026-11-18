@@ -204,12 +204,14 @@ describe.skipIf(process.env.INTEGRATION !== "1")("persistent graph", () => {
       error: "validation_failed",
       issues: [{ code: "invalid_shape", path: "/graph" }],
     });
-    const unsupported = await post({
+    const malformedV3 = await post({
       ...input,
       scope: "demo",
       graph: { version: 3, nodes: null, edges: null },
     });
-    expect(unsupported.json().issues[0].code).toBe("unsupported_graph_version");
+    expect(malformedV3.statusCode).toBe(400);
+    expect(malformedV3.json().error).toBe("validation_failed");
+    expect(malformedV3.json().issues[0].code).toBe("invalid_shape");
     expect(
       (await post({ ...input, scope: "demo", name: "x".repeat(9000) }))
         .statusCode,

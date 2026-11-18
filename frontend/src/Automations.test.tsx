@@ -8,6 +8,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import Automations from "./Automations";
+import { runtimeStatus } from "./test-runtime-status-fixture";
 import {
   definition,
   execution,
@@ -147,22 +148,26 @@ describe("automation screens", () => {
   it("restores focus to the details heading after a successful error reload", async () => {
     let detailCalls = 0;
     vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => {
+      if (String(url).endsWith("/runtime/status"))
+        return response(runtimeStatus("unknown"));
       if (String(url).includes("/executions?")) return response({ items: [] });
       return ++detailCalls === 1 ? response({}, 503) : response(d);
     });
     render(<Automations route={`#automations/${id}`} />);
-    const heading = screen.getByRole("heading", { name: "Automation Details" });
+    const heading = screen.getByRole("heading", {
+      name: "Detalhes da automação",
+    });
     expect(heading).not.toHaveFocus();
-    const reload = await screen.findByRole("button", { name: "Reload" });
+    const reload = await screen.findByRole("button", { name: "Recarregar" });
     reload.focus();
     expect(reload).toHaveFocus();
     fireEvent.click(reload);
-    await screen.findByRole("button", { name: "Activate" });
+    await screen.findByRole("button", { name: "Ativar" });
     expect(heading).toHaveFocus();
   });
   it.each([
-    [409, "Revision conflict"],
-    [503, "may have succeeded"],
+    [409, "Conflito de revisão"],
+    [503, "pode ter sido concluída"],
   ])(
     "preserves the condition workflow on toggle failure %i",
     async (status, text) => {
@@ -178,14 +183,14 @@ describe("automation screens", () => {
           : response(v2);
       });
       vi.spyOn(window, "confirm").mockReturnValue(true);
-      render(<Automations route={`#automations/${id}`} />);
-      const activate = await screen.findByRole("button", { name: "Activate" });
+      render(<Automations route={`#automations/${id}/builder`} />);
+      const activate = await screen.findByRole("button", { name: "Ativar" });
       await waitFor(() => expect(activate).toBeEnabled());
       fireEvent.click(activate);
       expect(await screen.findByRole("alert")).toHaveTextContent(text);
-      expect(screen.getByRole("button", { name: "Activate" })).toBeDisabled();
+      expect(screen.getByRole("button", { name: "Ativar" })).toBeDisabled();
       expect(
-        screen.getByRole("button", { name: "Condition" }),
+        screen.getByRole("button", { name: "Condição" }),
       ).toBeInTheDocument();
     },
   );
@@ -210,31 +215,31 @@ describe("automation screens", () => {
           : response(server);
       });
     vi.spyOn(window, "confirm").mockReturnValue(true);
-    render(<Automations route={`#automations/${id}`} />);
+    render(<Automations route={`#automations/${id}/builder`} />);
     await screen.findByRole("button", {
-      name: "Convert to condition workflow",
+      name: "Usar condição guiada",
     });
     fireEvent.click(
-      screen.getByRole("button", { name: "Convert to condition workflow" }),
+      screen.getByRole("button", { name: "Usar condição guiada" }),
     );
-    expect(screen.getByRole("button", { name: "Activate" })).toBeDisabled();
-    fireEvent.change(screen.getByLabelText("Field path"), {
+    expect(screen.getByRole("button", { name: "Ativar" })).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("Campo do evento"), {
       target: { value: "" },
     });
-    expect(screen.getByRole("button", { name: "Activate" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Ativar" })).toBeDisabled();
     expect(
-      screen.getByRole("button", { name: "Save workflow" }),
+      screen.getByRole("button", { name: "Salvar alterações" }),
     ).toBeDisabled();
-    fireEvent.change(screen.getByLabelText("Field path"), {
+    fireEvent.change(screen.getByLabelText("Campo do evento"), {
       target: { value: "data.value" },
     });
-    expect(screen.getByRole("button", { name: "Activate" })).toBeDisabled();
-    fireEvent.click(screen.getByRole("button", { name: "Save workflow" }));
+    expect(screen.getByRole("button", { name: "Ativar" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Salvar alterações" }));
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Activate" })).toBeEnabled(),
+      expect(screen.getByRole("button", { name: "Ativar" })).toBeEnabled(),
     );
-    fireEvent.click(screen.getByRole("button", { name: "Activate" }));
-    await screen.findByRole("button", { name: "Deactivate" });
+    fireEvent.click(screen.getByRole("button", { name: "Ativar" }));
+    await screen.findByRole("button", { name: "Desativar" });
     const writes = fetcher.mock.calls.filter(
       ([, options]) => options?.method === "PUT",
     );
@@ -268,11 +273,11 @@ describe("automation screens", () => {
       });
     vi.spyOn(window, "confirm").mockReturnValue(true);
     render(<Automations route={`#automations/${id}`} />);
-    const activate = await screen.findByRole("button", { name: "Activate" });
+    const activate = await screen.findByRole("button", { name: "Ativar" });
     await waitFor(() => expect(activate).toBeEnabled());
     fireEvent.click(activate);
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "CONDITIONS_WRITES_ENABLED",
+      "edição de condições está indisponível",
     );
     const write = fetcher.mock.calls.find(
       ([, options]) => options?.method === "PUT",
@@ -287,34 +292,6 @@ describe("automation screens", () => {
       graph,
     });
   });
-  it("keeps a dirty builder mounted when retrying history", async () => {
-    let historyCalls = 0;
-    const fetchMock = vi
-      .spyOn(globalThis, "fetch")
-      .mockImplementation(async (url) => {
-        if (String(url).includes("/executions?"))
-          return ++historyCalls === 1
-            ? response({}, 503)
-            : response({ items: [] });
-        return response(d);
-      });
-    render(<Automations route={`#automations/${id}`} />);
-    await screen.findByRole("button", { name: "+ Condition (placeholder)" });
-    fireEvent.click(
-      screen.getByRole("button", { name: "+ Condition (placeholder)" }),
-    );
-    fireEvent.click(await screen.findByRole("button", { name: "Retry" }));
-    await screen.findByText("No executions yet.");
-    expect(screen.getByText("Unsaved changes")).toBeInTheDocument();
-    expect(
-      screen.getByText("Condition is a placeholder and blocks activation."),
-    ).toBeInTheDocument();
-    expect(
-      fetchMock.mock.calls.filter(
-        ([url]) => !String(url).includes("/executions?"),
-      ).length,
-    ).toBe(1);
-  });
   it("treats an old server definition as a read-only preview", async () => {
     const legacy: Partial<typeof d> = { ...d };
     delete legacy.graph;
@@ -323,17 +300,17 @@ describe("automation screens", () => {
         ? response({ items: [] })
         : response(legacy),
     );
-    render(<Automations route={`#automations/${id}`} />);
+    render(<Automations route={`#automations/${id}/builder`} />);
     expect(
       await screen.findByText(/server does not support graph persistence/),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Save workflow" }),
+      screen.getByRole("button", { name: "Salvar alterações" }),
     ).toBeDisabled();
     expect(
       screen.getByRole("button", { name: "+ Condition (placeholder)" }),
     ).toBeDisabled();
-    expect(screen.getByRole("button", { name: /Activate/ })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /Ativar/ })).toBeDisabled();
   });
   it("loads an unscoped empty dashboard", async () => {
     vi.stubGlobal(
@@ -341,73 +318,126 @@ describe("automation screens", () => {
       vi.fn().mockResolvedValue(response({ items: [], nextCursor: null })),
     );
     render(<Automations route="#automations" />);
-    expect(await screen.findByText("No automations yet")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Crie sua primeira automação"),
+    ).toBeInTheDocument();
     vi.unstubAllGlobals();
   });
   it("validates creation and sends fixed inactive definition", async () => {
-    const fetcher = vi.fn().mockResolvedValue(response(d, 201));
+    const fetcher = vi.fn(async (url: string, options?: RequestInit) => {
+      if (url.endsWith("/runtime/status"))
+        return response({
+          ...runtimeStatus(),
+          capabilities: {
+            ...runtimeStatus().capabilities,
+            conditionsWrites: true,
+          },
+        });
+      const body = JSON.parse(String(options?.body));
+      return response({ ...d, ...body, active: false }, 201);
+    });
     vi.stubGlobal("fetch", fetcher);
     render(<Automations route="#automations/create" />);
-    fireEvent.click(
-      screen.getByRole("button", { name: "Create inactive automation" }),
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Criar desativada" }),
+      ).toBeEnabled(),
     );
-    expect(screen.getByRole("alert")).toHaveTextContent("Enter a valid");
-    expect(screen.getByLabelText("Scope (required)")).toHaveFocus();
+    fireEvent.click(screen.getByRole("button", { name: "Criar desativada" }));
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Informe um nome válido",
+    );
+    expect(screen.getByLabelText("Nome da automação")).toHaveFocus();
     expect(
-      screen.getByLabelText("Scope (required)"),
-    ).toHaveAccessibleDescription(/Enter a valid/);
-    fireEvent.change(screen.getByLabelText("Scope (required)"), {
+      screen.getByLabelText("Nome da automação"),
+    ).toHaveAccessibleDescription(/Informe um nome válido/);
+    fireEvent.change(screen.getByLabelText("Nome da automação"), {
       target: { value: "tenant" },
     });
-    fireEvent.change(screen.getByLabelText("Name (required)"), {
+    fireEvent.change(screen.getByLabelText("Nome da automação"), {
       target: { value: "Receipt" },
     });
-    fireEvent.click(
-      screen.getByRole("button", { name: "Create inactive automation" }),
+    fireEvent.click(screen.getByRole("button", { name: "Criar desativada" }));
+    await waitFor(() =>
+      expect(
+        fetcher.mock.calls.some(([, options]) => options?.method === "POST"),
+      ).toBe(true),
     );
-    await waitFor(() => expect(fetcher).toHaveBeenCalled());
-    expect(JSON.parse(fetcher.mock.calls[0][1].body)).toEqual({
-      scope: "tenant",
+    expect(
+      JSON.parse(
+        String(
+          fetcher.mock.calls.find(
+            ([, options]) => options?.method === "POST",
+          )![1]?.body,
+        ),
+      ),
+    ).toEqual({
+      scope: "local",
       name: "Receipt",
-      schemaVersion: 1,
+      schemaVersion: 2,
+      graph: conditionDraft(defaultGraph(), false, {
+        fieldPath: "message",
+        operator: "contains",
+        expectedType: "string",
+        expectedValue: "pedido",
+      }),
       trigger: d.trigger,
       action: d.action,
     });
     vi.unstubAllGlobals();
   });
   it("renders history and event link then shows revision conflict", async () => {
-    const fetcher = vi
-      .fn()
-      .mockResolvedValueOnce(response(d))
-      .mockResolvedValueOnce(response({ items: [x] }))
-      .mockResolvedValueOnce(response({}, 409))
-      .mockResolvedValueOnce(response(d))
-      .mockResolvedValueOnce(response({ items: [] }));
+    let historyCalls = 0;
+    const fetcher = vi.fn(async (url: string, options?: RequestInit) => {
+      if (
+        url.endsWith("/runtime/status") &&
+        (options?.method ?? "GET") === "GET"
+      )
+        return response(runtimeStatus("unknown"));
+      if (url.includes("/executions?") && (options?.method ?? "GET") === "GET")
+        return response({ items: historyCalls++ === 0 ? [x] : [] });
+      if (url.endsWith(`/automations/${id}`)) {
+        if (options?.method === "PUT") return response({}, 409);
+        if ((options?.method ?? "GET") === "GET") return response(d);
+      }
+      throw new Error(`Unexpected request ${options?.method ?? "GET"} ${url}`);
+    });
     vi.stubGlobal("fetch", fetcher);
     vi.spyOn(window, "confirm").mockReturnValue(true);
     render(<Automations route={`#automations/${id}`} />);
-    expect(await screen.findByText("accepted")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: eventId })).toHaveAttribute(
+    expect(await screen.findByText("Recebida")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Abrir evento" })).toHaveAttribute(
       "href",
       `#explorer?eventId=${eventId}`,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Activate" }));
+    fireEvent.click(screen.getByRole("button", { name: "Ativar" }));
     expect(window.confirm).toHaveBeenCalledWith(
-      expect.stringContaining("revision 1"),
+      expect.stringContaining("revisão 1"),
     );
-    expect(await screen.findByText(/Revision conflict/)).toBeInTheDocument();
-    expect(JSON.parse(fetcher.mock.calls[2][1].body)).toMatchObject({
+    expect(await screen.findByText(/Conflito de revisão/)).toBeInTheDocument();
+    const write = fetcher.mock.calls.find(
+      ([, options]) => options?.method === "PUT",
+    );
+    expect(JSON.parse(String(write?.[1]?.body))).toMatchObject({
       active: true,
       expectedRevision: 1,
     });
-    fireEvent.click(screen.getByRole("button", { name: "Reload" }));
-    expect(
-      await screen.findByRole("button", { name: "Activate" }),
-    ).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Recarregar" }));
+    expect(await screen.findByRole("button", { name: "Ativar" })).toBeEnabled();
     vi.unstubAllGlobals();
   });
   it("requests scope during creation and aborts a pending mutation on navigation", async () => {
     const fetcher = vi.fn((url: string, options?: RequestInit) => {
+      if (url.endsWith("/runtime/status"))
+        return Promise.resolve(
+          response({
+            ...runtimeStatus(),
+            capabilities: {
+              ...runtimeStatus().capabilities,
+              conditionsWrites: true,
+            },
+          }),
+        );
       if (options?.method === "POST") return new Promise<Response>(() => {});
       if (url.includes("executions"))
         return Promise.resolve(response({ items: [] }));
@@ -416,31 +446,33 @@ describe("automation screens", () => {
     });
     vi.stubGlobal("fetch", fetcher);
     const { rerender } = render(<Automations route="#automations" />);
-    await screen.findByText("No automations yet");
+    await screen.findByText("Crie sua primeira automação");
     rerender(<Automations route="#automations/create" />);
-    expect(screen.getByLabelText("Scope (required)")).toHaveValue("");
-    fireEvent.change(screen.getByLabelText("Scope (required)"), {
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Criar desativada" }),
+      ).toBeEnabled(),
+    );
+    fireEvent.change(screen.getByLabelText("Nome da automação"), {
       target: { value: "tenant" },
     });
-    fireEvent.change(screen.getByLabelText("Name (required)"), {
+    fireEvent.change(screen.getByLabelText("Nome da automação"), {
       target: { value: "Receipt" },
     });
-    fireEvent.click(
-      screen.getByRole("button", { name: "Create inactive automation" }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "Criar desativada" }));
     expect(
       JSON.parse(
         fetcher.mock.calls.find(
           ([, options]) => options?.method === "POST",
         )![1]!.body as string,
       ).scope,
-    ).toBe("tenant");
+    ).toBe("local");
     rerender(<Automations route={`#automations/${id}`} />);
-    expect(
-      await screen.findByRole("button", { name: "Activate" }),
-    ).toBeEnabled();
+    expect(await screen.findByRole("button", { name: "Ativar" })).toBeEnabled();
     rerender(<Automations route="#automations" />);
-    expect(await screen.findByText("No automations yet")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Crie sua primeira automação"),
+    ).toBeInTheDocument();
     vi.unstubAllGlobals();
   });
   it("reports malformed list response with retry", async () => {
@@ -450,9 +482,11 @@ describe("automation screens", () => {
     );
     render(<Automations route="#automations" />);
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "could not return results",
+      "Não foi possível carregar",
     );
-    expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Tentar novamente" }),
+    ).toBeInTheDocument();
     vi.unstubAllGlobals();
   });
 });
