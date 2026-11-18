@@ -25,4 +25,4 @@ Use dados sintéticos. Nunca inclua tokens, arquivos `.env`, configurações pri
 
 ## Licenciamento
 
-Nenhuma licença foi atribuída por esta revisão. Uma contribuição deve respeitar a titularidade existente; mudanças de termos dependem do responsável pelo projeto.
+O projeto é distribuído sob a [licença MIT](LICENSE). Ao contribuir, você declara ter os direitos necessários sobre sua contribuição e concorda em disponibilizá-la sob essa licença.
