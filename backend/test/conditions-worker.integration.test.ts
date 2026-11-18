@@ -255,7 +255,7 @@ describe.skipIf(process.env.INTEGRATION !== "1")(
               client.query(insertRevision, [id, version]),
             ).rejects.toMatchObject({
               code: "23514",
-              constraint: "automation_graph_valid_v2",
+              constraint: "automation_graph_valid_v3",
             });
             await client.query("ROLLBACK");
 
@@ -263,7 +263,7 @@ describe.skipIf(process.env.INTEGRATION !== "1")(
             // Restore the guard immediately: it still rejects all new invalid rows.
             await client.query("BEGIN");
             await client.query(
-              "ALTER TABLE automation_definition_revisions DROP CONSTRAINT automation_graph_valid_v2",
+              "ALTER TABLE automation_definition_revisions DROP CONSTRAINT automation_graph_valid_v3",
             );
             await client.query(
               "INSERT INTO automation_definitions(id,scope,current_revision) VALUES ($1,$2,1)",
@@ -271,9 +271,24 @@ describe.skipIf(process.env.INTEGRATION !== "1")(
             );
             await client.query(insertRevision, [id, version]);
             await client.query(
-              "ALTER TABLE automation_definition_revisions ADD CONSTRAINT automation_graph_valid_v2 CHECK (automation_graph_guard_v2(graph, active, schema_version, trigger_type, action_type) IS TRUE) NOT VALID",
+              "ALTER TABLE automation_definition_revisions ADD CONSTRAINT automation_graph_valid_v3 CHECK (automation_graph_guard_v3(graph, active, schema_version, trigger_type, action_type) IS TRUE) NOT VALID",
             );
             await client.query("COMMIT");
+
+            // NOT VALID permits the historical row, but must guard new writes.
+            await client.query("BEGIN");
+            const newId = randomUUID();
+            await client.query(
+              "INSERT INTO automation_definitions(id,scope,current_revision) VALUES ($1,$2,1)",
+              [newId, `guard-check-${randomUUID()}`],
+            );
+            await expect(
+              client.query(insertRevision, [newId, version]),
+            ).rejects.toMatchObject({
+              code: "23514",
+              constraint: "automation_graph_valid_v3",
+            });
+            await client.query("ROLLBACK");
           } catch (error) {
             await client.query("ROLLBACK");
             throw error;

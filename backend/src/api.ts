@@ -4,9 +4,13 @@ import { automationRoutes } from "./automations.js";
 import { accept } from "./accept.js";
 import { requestSchema, validEventData, type Input } from "./contract.js";
 import { executionRoutes } from "./executions.js";
+import { overviewRoute } from "./overview.js";
+import { publicStatus, readRuntimeSnapshot } from "./runtime-status.js";
 import {
   automationSnapshotsEnabled,
   conditionsWritesEnabled,
+  viacepWritesEnabled,
+  viacepExternalExecutionEnabled,
 } from "./config.js";
 
 export function api(
@@ -16,6 +20,10 @@ export function api(
   ),
   conditionsEnabled = conditionsWritesEnabled(
     process.env.CONDITIONS_WRITES_ENABLED,
+  ),
+  viacepEnabled = viacepWritesEnabled(process.env.VIACEP_WRITES_ENABLED),
+  viacepExternalEnabled = viacepExternalExecutionEnabled(
+    process.env.VIACEP_EXTERNAL_EXECUTION_ENABLED,
   ),
 ) {
   const app = Fastify({
@@ -36,9 +44,16 @@ export function api(
       }
       return reply.send(error);
     });
-    automationRoutes(automations, pool, conditionsEnabled);
+    automationRoutes(
+      automations,
+      pool,
+      conditionsEnabled,
+      viacepEnabled,
+      viacepExternalEnabled,
+    );
   });
   executionRoutes(app, pool);
+  overviewRoute(app, pool);
   app.get("/status", async () => ({
     profile: "local-development-only",
     limitations: [
@@ -50,6 +65,33 @@ export function api(
       "no external exactly-once effects",
     ],
   }));
+  app.get(
+    "/runtime/status",
+    {
+      schema: {
+        querystring: {
+          type: "object",
+          additionalProperties: false,
+          properties: {},
+        },
+      },
+      preHandler: async (request, reply) => {
+        if (
+          request.headers["transfer-encoding"] !== undefined ||
+          (request.headers["content-length"] !== undefined &&
+            request.headers["content-length"] !== "0")
+        )
+          return reply.code(400).send({ error: "body_not_allowed" });
+      },
+    },
+    async () =>
+      publicStatus(await readRuntimeSnapshot(), {
+        automationSnapshots: snapshotsEnabled,
+        conditionsWrites: conditionsEnabled,
+        viacepWrites: viacepEnabled,
+        viacepExternalExecution: viacepExternalEnabled,
+      }),
+  );
   app.post<{ Body: Input }>(
     "/events",
     { schema: { body: requestSchema } },

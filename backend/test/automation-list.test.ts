@@ -100,7 +100,7 @@ describe("automation summary list", () => {
     const query = vi
       .fn()
       .mockRejectedValueOnce(new Error("secret"))
-      .mockResolvedValueOnce({ rows: [{ ...row(1), workflow_version: 3 }] })
+      .mockResolvedValueOnce({ rows: [{ ...row(1), workflow_version: 4 }] })
       .mockResolvedValueOnce({ rows: [row(1)] });
     const app = api({ query } as unknown as pg.Pool);
     for (let i = 0; i < 2; i++) {
@@ -109,6 +109,30 @@ describe("automation summary list", () => {
       expect(res.json()).toEqual({ error: "unavailable" });
     }
     expect((await app.inject("/automations/list")).statusCode).toBe(200);
+    await app.close();
+  });
+  it("returns v3 summaries without changing pagination", async () => {
+    const query = vi.fn().mockResolvedValue({
+      rows: [{ ...row(1), schema_version: 3, workflow_version: 3 }, row(2)],
+    });
+    const app = api({ query } as unknown as pg.Pool);
+    const res = await app.inject("/automations/list?limit=1");
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({
+      items: [
+        {
+          id: id(1),
+          name: "Name 1",
+          scope: "demo",
+          active: false,
+          revision: 1,
+          schemaVersion: 3,
+          workflowVersion: 3,
+        },
+      ],
+      nextCursor: id(1),
+    });
+    expect(query.mock.calls[0][1]).toEqual([2]);
     await app.close();
   });
 });

@@ -7,6 +7,11 @@ import {
   within,
 } from "@testing-library/react";
 import Automations from "./Automations";
+vi.mock("./TestEventPanel", () => ({
+  default: ({ onExecutionTerminal }: { onExecutionTerminal: () => void }) => (
+    <button onClick={onExecutionTerminal}>Simular execução finalizada</button>
+  ),
+}));
 import { fixed } from "./automation-api";
 import { defaultGraph } from "./workflow-graph";
 
@@ -68,7 +73,7 @@ const response = (value: unknown, status = 200) =>
   });
 const history = () =>
   screen
-    .getByRole("heading", { name: "Execution history" })
+    .getByRole("heading", { name: "Histórico recente" })
     .closest("section")!;
 afterEach(() => {
   cleanup();
@@ -76,6 +81,32 @@ afterEach(() => {
 });
 
 describe("execution history interactions", () => {
+  it("refreshes history on terminal callback without resending an event", async () => {
+    const fetcher = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(async (url) =>
+        String(url).includes("/executions?")
+          ? response({ items: [] })
+          : response(definition),
+      );
+    render(<Automations route={`#automations/${id}`} />);
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Simular execução finalizada",
+      }),
+    );
+    await vi.waitFor(() =>
+      expect(
+        fetcher.mock.calls.filter(([url]) =>
+          String(url).includes("/executions?"),
+        ),
+      ).toHaveLength(2),
+    );
+    expect(
+      fetcher.mock.calls.filter(([, options]) => options?.method === "POST"),
+    ).toHaveLength(0);
+  });
+
   it("shows mixed v1 and v2 results, expanded decisions and event-level retry without receipt values", async () => {
     const items = [
       { ...base, result: receipt },
@@ -123,28 +154,38 @@ describe("execution history interactions", () => {
         : response(definition),
     );
     render(<Automations route={`#automations/${id}`} />);
-    await screen.findAllByText("Decision TRUE → action");
+    await screen.findAllByText("Condição: verdadeira");
     const rows = within(history()).getAllByRole("row").slice(1);
     expect(rows).toHaveLength(5);
-    expect(within(rows[0]).getByText(/receipt message/)).toBeInTheDocument();
+    expect(rows[0]).toHaveTextContent("Comprovante registrado");
     expect(
-      within(rows[0]).getByRole("link", { name: eventId }),
+      within(rows[0]).getByRole("link", { name: "Abrir evento" }),
     ).toHaveAttribute("href", `#explorer?eventId=${eventId}`);
-    expect(rows[1]).toHaveTextContent("Action: executed · action");
-    expect(rows[2]).toHaveTextContent("Decision FALSE → end");
-    expect(rows[2]).toHaveTextContent("Action: ignored · action");
+    expect(rows[1]).toHaveTextContent("Ação: executada");
+    expect(rows[2]).toHaveTextContent("Condição: falsa");
+    expect(rows[2]).toHaveTextContent("Ação: ignorada");
     for (const row of [rows[1], rows[2]]) {
-      fireEvent.click(within(row).getByText("Execution details"));
-      expect(within(row).getByText("Pinned revision: 1")).toBeVisible();
-      expect(within(row).getByText("Condition node: condition")).toBeVisible();
+      const details = within(row)
+        .getByText("Detalhes da execução")
+        .closest("details")!;
+      expect(details).not.toHaveAttribute("open");
+      fireEvent.click(within(details).getByText("Detalhes da execução"));
+      expect(within(details).getByText("Revisão utilizada: 1")).toBeVisible();
+      expect(
+        within(details).getByText("Nó da condição: condition"),
+      ).toBeVisible();
     }
-    expect(rows[3]).toHaveTextContent("Action: pending");
-    expect(rows[3]).toHaveTextContent("Failure: transient · action_transient");
-    expect(rows[3]).toHaveTextContent("Retry (event-level): retry scheduled");
-    expect(rows[4]).toHaveTextContent("Action: not executed");
-    expect(rows[4]).toHaveTextContent("Failure: exhausted · retry_exhausted");
-    fireEvent.click(within(rows[4]).getByText("Execution details"));
-    expect(within(rows[4]).getByText("Failure node: action")).toBeVisible();
+    expect(rows[3]).toHaveTextContent("Ação: pendente");
+    expect(rows[3]).toHaveTextContent("Nova tentativa agendada");
+    expect(rows[4]).toHaveTextContent("Ação: não executada");
+    const details = within(rows[4])
+      .getByText("Detalhes da execução")
+      .closest("details")!;
+    expect(details).not.toHaveAttribute("open");
+    fireEvent.click(within(details).getByText("Detalhes da execução"));
+    expect(details).toHaveTextContent(
+      "exhausted · retry_exhausted · nó: action",
+    );
     expect(history()).not.toHaveTextContent("PRIVATE_RECEIPT_VALUE");
   });
 
@@ -178,25 +219,29 @@ describe("execution history interactions", () => {
       render(<Automations route={`#automations/${id}`} />);
       const alert = await screen.findByRole("alert");
       expect(alert).toHaveTextContent(
-        kind === "malformed" ? "unexpected response" : "unavailable",
+        kind === "malformed" ? "resposta inesperada" : "indisponível",
       );
       expect(history()).not.toHaveTextContent("PRIVATE_PAYLOAD_VALUE");
-      const retry = within(history()).getByRole("button", { name: "Retry" });
+      const retry = within(history()).getByRole("button", {
+        name: "Tentar novamente",
+      });
       retry.focus();
       expect(retry).toHaveFocus();
       fireEvent.click(retry);
       expect(
-        screen.getByRole("heading", { name: "Execution history" }),
+        screen.getByRole("heading", { name: "Histórico recente" }),
       ).toHaveFocus();
       expect(
-        within(history()).getByText("Loading history…"),
+        within(history()).getByText("Carregando histórico…"),
       ).toBeInTheDocument();
       resolveRetry(response({ items: [] }));
       expect(
-        await within(history()).findByText("No executions yet."),
+        await within(history()).findByText(
+          "Nenhuma execução retornada nesta lista limitada.",
+        ),
       ).toBeInTheDocument();
       expect(
-        screen.getByRole("heading", { name: "Execution history" }),
+        screen.getByRole("heading", { name: "Histórico recente" }),
       ).toHaveFocus();
       expect(calls).toBe(2);
     },

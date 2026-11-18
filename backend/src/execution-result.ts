@@ -1,3 +1,5 @@
+import { parseExecutionResultV3 } from "./execution-result-v3.js";
+
 type ObjectValue = Record<string, unknown>;
 const object = (value: unknown, keys: string[]): value is ObjectValue =>
   value !== null &&
@@ -16,10 +18,33 @@ const receipt = (value: unknown, eventId: string) =>
 
 /** Returns the action status only for a structurally valid persisted result. */
 export function executionResultStatus(
+  version: 3,
+  eventId: string,
+  result: unknown,
+  resultIsSqlNull: boolean,
+): string | null;
+export function executionResultStatus(
   version: number,
   eventId: string,
   result: unknown,
+  resultIsSqlNull: boolean,
+): string | null;
+export function executionResultStatus(
+  version: 1 | 2,
+  eventId: string,
+  result: unknown,
+): string | null;
+export function executionResultStatus(
+  version: number,
+  eventId: string,
+  result: unknown,
+  resultIsSqlNull?: boolean,
 ): string | null {
+  if (version === 3)
+    return (
+      parseExecutionResultV3(result, eventId, resultIsSqlNull ?? invariant())
+        ?.action.status ?? null
+    );
   if (version !== 1 && version !== 2) throw new Error("execution invariant");
   if (result === null) return null;
   if (version === 1) {
@@ -90,4 +115,7 @@ export function executionResultStatus(
             : false;
   if (!valid) throw new Error("execution invariant");
   return action.status as string;
+}
+function invariant(): never {
+  throw new Error("execution invariant");
 }

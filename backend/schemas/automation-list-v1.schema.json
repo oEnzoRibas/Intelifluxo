@@ -77,10 +77,10 @@
                 "maximum": 2147483647
               },
               "schemaVersion": {
-                "enum": [1, 2]
+                "enum": [1, 2, 3]
               },
               "workflowVersion": {
-                "enum": [1, 2]
+                "enum": [1, 2, 3]
               }
             }
           }

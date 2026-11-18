@@ -5,11 +5,15 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import { expect, it, vi } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import WorkflowBuilder, { flowEdges, flowNodes } from "./WorkflowBuilder";
 import { conditionDraft, defaultGraph } from "./workflow-graph";
 import { definition, type Definition } from "./automation-api";
 import { edgeIdentity } from "./condition-contract";
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
 
 const d: Definition = {
   id: "11111111-1111-1111-1111-111111111111",
@@ -40,8 +44,9 @@ it("hydrates a persisted condition graph into the builder without changing its t
   const { container } = render(
     <WorkflowBuilder definition={loaded} onDirty={onDirty} onSaved={vi.fn()} />,
   );
-  expect(screen.getByRole("button", { name: "Condition" })).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "End" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Condição" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Fim" })).toBeInTheDocument();
+  fireEvent.click(screen.getByText("Caminhos da condição"));
   expect(
     screen.queryByText(/workflow preview is read-only/i),
   ).not.toBeInTheDocument();
@@ -54,12 +59,12 @@ it("hydrates a persisted condition graph into the builder without changing its t
   ).toHaveAttribute("aria-label", "FALSE output");
   expect(
     within(screen.getByLabelText("Workflow connections")).getByText(
-      /Condition — TRUE → Record Receipt Action/,
+      /Condição — TRUE → Ação de registro/,
     ),
   ).toBeInTheDocument();
   expect(
     within(screen.getByLabelText("Workflow connections")).getByText(
-      /Condition — FALSE → End/,
+      /Condição — FALSE → Fim/,
     ),
   ).toBeInTheDocument();
   expect(flowEdges(graph).map((edge) => edge.id)).toEqual(
@@ -79,9 +84,11 @@ it("hydrates a persisted condition graph into the builder without changing its t
     flowNodes(graph).map(({ id, position }) => ({ id, position })),
   ).toEqual(graph.nodes.map(({ id, position }) => ({ id, position })));
   expect(
-    screen.getByRole("button", { name: "Reset to executable path" }),
+    screen.queryByRole("button", { name: "Reset to executable path" }),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.getByRole("button", { name: "Salvar alterações" }),
   ).toBeDisabled();
-  expect(screen.getByRole("button", { name: "Save workflow" })).toBeDisabled();
 });
 it("saves a non-drag v2 position edit and reopens the saved topology", async () => {
   const graph = conditionDraft(defaultGraph(), false, {
@@ -106,9 +113,9 @@ it("saves a non-drag v2 position edit and reopens the saved topology", async () 
   const view = render(
     <WorkflowBuilder definition={loaded} onDirty={vi.fn()} onSaved={onSaved} />,
   );
-  fireEvent.click(screen.getByRole("button", { name: "Condition" }));
-  fireEvent.click(screen.getByRole("button", { name: "Move right" }));
-  fireEvent.click(screen.getByRole("button", { name: "Save workflow" }));
+  fireEvent.click(screen.getByRole("button", { name: "Condição" }));
+  fireEvent.click(screen.getByRole("button", { name: "Mover para a direita" }));
+  fireEvent.click(screen.getByRole("button", { name: "Salvar alterações" }));
   await waitFor(() => expect(onSaved).toHaveBeenCalled());
   const body = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
   expect(body.expectedRevision).toBe(1);
@@ -131,7 +138,9 @@ it("saves a non-drag v2 position edit and reopens the saved topology", async () 
       onSaved={vi.fn()}
     />,
   );
-  expect(screen.getByRole("button", { name: "Save workflow" })).toBeDisabled();
+  expect(
+    screen.getByRole("button", { name: "Salvar alterações" }),
+  ).toBeDisabled();
   expect(screen.getByLabelText("Workflow connections")).toHaveTextContent(
     "FALSE",
   );
@@ -141,10 +150,10 @@ it("restores focus after inspector dismissal and falls back after removal", () =
   render(
     <WorkflowBuilder definition={d} onDirty={vi.fn()} onSaved={vi.fn()} />,
   );
-  const node = screen.getByRole("button", { name: "Receipt Trigger" });
+  const node = screen.getByRole("button", { name: "Gatilho de recebimento" });
   node.focus();
   fireEvent.click(node);
-  fireEvent.click(screen.getByRole("button", { name: "Close" }));
+  fireEvent.click(screen.getByRole("button", { name: "Concluir" }));
   expect(node).toHaveFocus();
   fireEvent.click(node);
   fireEvent.keyDown(screen.getByLabelText("Visual workflow builder"), {
@@ -152,9 +161,9 @@ it("restores focus after inspector dismissal and falls back after removal", () =
   });
   expect(node).toHaveFocus();
   fireEvent.click(node);
-  fireEvent.click(screen.getByRole("button", { name: "Remove node" }));
+  fireEvent.click(screen.getByRole("button", { name: "Remover etapa" }));
   expect(
-    screen.getByRole("heading", { name: "Node list / no dragging" }),
+    screen.getByRole("heading", { name: "Lista de etapas / sem arrastar" }),
   ).toHaveFocus();
 });
 it("maps domain positions and directed edges without changing the graph", () => {
@@ -188,11 +197,13 @@ it("constructs and saves a condition path with expected revision and blocks acti
   fireEvent.click(
     screen.getByRole("button", { name: "+ Condition (placeholder)" }),
   );
-  expect(screen.getByRole("button", { name: "Save workflow" })).toBeDisabled();
+  expect(
+    screen.getByRole("button", { name: "Salvar alterações" }),
+  ).toBeDisabled();
   fireEvent.click(
     screen.getByRole("button", { name: "Connect through condition" }),
   );
-  fireEvent.click(screen.getByRole("button", { name: "Save workflow" }));
+  fireEvent.click(screen.getByRole("button", { name: "Salvar alterações" }));
   await waitFor(() => expect(onSaved).toHaveBeenCalled());
   const body = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
   expect(body.expectedRevision).toBe(1);
@@ -225,7 +236,7 @@ it("preserves a conflicted draft until confirmed reload, then adopts the server 
   fireEvent.click(
     screen.getByRole("button", { name: "Connect through condition" }),
   );
-  fireEvent.click(screen.getByRole("button", { name: "Save workflow" }));
+  fireEvent.click(screen.getByRole("button", { name: "Salvar alterações" }));
   expect(await screen.findByRole("alert")).toHaveTextContent(
     "Revision conflict",
   );
@@ -275,11 +286,13 @@ it("reconciles an ambiguous write by explicitly reloading with GET", async () =>
   fireEvent.click(
     screen.getByRole("button", { name: "Connect through condition" }),
   );
-  fireEvent.click(screen.getByRole("button", { name: "Save workflow" }));
+  fireEvent.click(screen.getByRole("button", { name: "Salvar alterações" }));
   expect(await screen.findByRole("alert")).toHaveTextContent(
     "Save outcome is unknown",
   );
-  expect(screen.getByRole("button", { name: "Save workflow" })).toBeDisabled();
+  expect(
+    screen.getByRole("button", { name: "Salvar alterações" }),
+  ).toBeDisabled();
   fireEvent.click(
     screen.getByRole("button", { name: /Reload server version/ }),
   );
@@ -292,24 +305,28 @@ it("supports non-drag removal, reconnection, reset and Escape from the node list
   render(
     <WorkflowBuilder definition={d} onDirty={vi.fn()} onSaved={vi.fn()} />,
   );
-  const listButton = screen.getByRole("button", { name: "Receipt Trigger" });
+  const listButton = screen.getByRole("button", {
+    name: "Gatilho de recebimento",
+  });
   listButton.focus();
   expect(listButton).toHaveFocus();
   fireEvent.click(listButton);
   expect(
-    within(screen.getByText("Configuration").closest("aside")!).getByText(
-      "receipt.v1",
+    within(screen.getByText("Configuração").closest("aside")!).getByText(
+      "Gatilho de recebimento",
     ),
   ).toBeInTheDocument();
   fireEvent.keyDown(listButton, { key: "Escape" });
   expect(
-    screen.getByText("Select a node for information."),
+    screen.getByText("Selecione uma etapa para consultar as informações."),
   ).toBeInTheDocument();
   fireEvent.click(listButton);
-  fireEvent.click(screen.getByRole("button", { name: "Remove node" }));
+  fireEvent.click(screen.getByRole("button", { name: "Remover etapa" }));
 
   expect(screen.getByText(/Complete the directed path/)).toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "+ Receipt Trigger" }));
+  fireEvent.click(
+    screen.getByRole("button", { name: "+ Gatilho de recebimento" }),
+  );
   fireEvent.click(
     screen.getByRole("button", { name: "Connect trigger to action" }),
   );
@@ -319,7 +336,9 @@ it("supports non-drag removal, reconnection, reset and Escape from the node list
   fireEvent.click(
     screen.getByRole("button", { name: "Reset to executable path" }),
   );
-  expect(screen.getByRole("button", { name: "Save workflow" })).toBeDisabled();
+  expect(
+    screen.getByRole("button", { name: "Salvar alterações" }),
+  ).toBeDisabled();
 });
 
 it("saves an executable edit with the full payload and clears dirty state", async () => {
@@ -341,14 +360,18 @@ it("saves an executable edit with the full payload and clears dirty state", asyn
   render(
     <WorkflowBuilder definition={d} onDirty={onDirty} onSaved={onSaved} />,
   );
-  fireEvent.click(screen.getByRole("button", { name: "Receipt Trigger" }));
-  fireEvent.click(screen.getByRole("button", { name: "Remove node" }));
-  fireEvent.click(screen.getByRole("button", { name: "+ Receipt Trigger" }));
+  fireEvent.click(
+    screen.getByRole("button", { name: "Gatilho de recebimento" }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Remover etapa" }));
+  fireEvent.click(
+    screen.getByRole("button", { name: "+ Gatilho de recebimento" }),
+  );
   fireEvent.click(
     screen.getByRole("button", { name: "Connect trigger to action" }),
   );
   expect(onDirty).toHaveBeenLastCalledWith(true);
-  fireEvent.click(screen.getByRole("button", { name: "Save workflow" }));
+  fireEvent.click(screen.getByRole("button", { name: "Salvar alterações" }));
   await waitFor(() =>
     expect(onSaved).toHaveBeenCalledWith(
       expect.objectContaining({ revision: 2 }),
@@ -363,8 +386,10 @@ it("saves an executable edit with the full payload and clears dirty state", asyn
     action: d.action,
     graph: { ...defaultGraph(), nodes: [...defaultGraph().nodes].reverse() },
   });
-  expect(onDirty).toHaveBeenLastCalledWith(false);
-  expect(screen.getByRole("button", { name: "Save workflow" })).toBeDisabled();
+  await waitFor(() => expect(onDirty).toHaveBeenLastCalledWith(false));
+  expect(
+    screen.getByRole("button", { name: "Salvar alterações" }),
+  ).toBeDisabled();
   fetchMock.mockRestore();
 });
 
@@ -384,7 +409,7 @@ it("ignores a save response after the builder unmounts", async () => {
   fireEvent.click(
     screen.getByRole("button", { name: "Connect through condition" }),
   );
-  fireEvent.click(screen.getByRole("button", { name: "Save workflow" }));
+  fireEvent.click(screen.getByRole("button", { name: "Salvar alterações" }));
   const body = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
   view.unmount();
   expect(fetchMock.mock.calls[0][1]?.signal?.aborted).toBe(true);
@@ -434,7 +459,7 @@ it("hydrates persisted IDs, positions and edges on a fresh mount", () => {
   expect(screen.getByTestId("rf__node-persisted-trigger")).toHaveStyle({
     transform: "translate(57px,-42px)",
   });
-  expect(screen.getByText(/2 connections|1 connection/)).toBeInTheDocument();
+  expect(screen.getByText(/2 conexões|1 conexões/)).toBeInTheDocument();
 });
 
 it("reset preserves existing executable IDs and positions", async () => {
@@ -472,7 +497,7 @@ it("reset preserves existing executable IDs and positions", async () => {
   expect(screen.getByTestId("rf__node-custom-action")).toHaveStyle({
     transform: "translate(123px,-45px)",
   });
-  fireEvent.click(screen.getByRole("button", { name: "Save workflow" }));
+  fireEvent.click(screen.getByRole("button", { name: "Salvar alterações" }));
   await waitFor(() => expect(fetchMock).toHaveBeenCalled());
   const result = JSON.parse(String(fetchMock.mock.calls[0][1]?.body)).graph;
   expect(result.nodes).toEqual(graph.nodes.slice(0, 2));
@@ -487,14 +512,14 @@ it.each([
   {
     retained: "trigger",
     occupied: "action",
-    removedLabel: "Record Receipt Action",
+    removedLabel: "Ação de registro",
     source: "action",
     target: "action-1",
   },
   {
     retained: "action",
     occupied: "trigger",
-    removedLabel: "Receipt Trigger",
+    removedLabel: "Gatilho de recebimento",
     source: "trigger-1",
     target: "trigger",
   },
@@ -524,14 +549,14 @@ it.each([
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: removedLabel }));
-    fireEvent.click(screen.getByRole("button", { name: "Remove node" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remover etapa" }));
     fireEvent.click(
       screen.getByRole("button", { name: "Reset to executable path" }),
     );
     expect(screen.getByTestId(`rf__node-${occupied}`)).toHaveStyle({
       transform: "translate(71px,-28px)",
     });
-    fireEvent.click(screen.getByRole("button", { name: "Save workflow" }));
+    fireEvent.click(screen.getByRole("button", { name: "Salvar alterações" }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
     const result = JSON.parse(String(fetchMock.mock.calls[0][1]?.body)).graph;
     expect(result.nodes).toHaveLength(2);
@@ -564,11 +589,13 @@ it("keeps a rejected draft editable and dirty without reconciliation", async () 
   fireEvent.click(
     screen.getByRole("button", { name: "Connect through condition" }),
   );
-  fireEvent.click(screen.getByRole("button", { name: "Save workflow" }));
+  fireEvent.click(screen.getByRole("button", { name: "Salvar alterações" }));
   expect(await screen.findByRole("alert")).toHaveTextContent(
     "Invalid workflow path",
   );
-  expect(screen.getByRole("button", { name: "Save workflow" })).toBeEnabled();
+  expect(
+    screen.getByRole("button", { name: "Salvar alterações" }),
+  ).toBeEnabled();
   expect(
     screen.queryByRole("button", { name: /Reload server version/ }),
   ).not.toBeInTheDocument();
@@ -604,10 +631,10 @@ it("attributes server node issues and moves focus from the summary", async () =>
   fireEvent.click(
     screen.getByRole("button", { name: "Connect through condition" }),
   );
-  fireEvent.click(screen.getByRole("button", { name: "Save workflow" }));
+  fireEvent.click(screen.getByRole("button", { name: "Salvar alterações" }));
   const summary = await screen.findByLabelText("Node validation errors");
   const node = screen.getByRole("button", {
-    name: "Condition · not executable",
+    name: "Condição · não executável",
   });
   expect(node).toHaveAttribute("aria-invalid", "true");
   expect(node).toHaveAttribute("aria-describedby");
@@ -632,7 +659,7 @@ it("attributes server node issues and moves focus from the summary", async () =>
       screen.queryByLabelText("Node validation errors"),
     ).not.toBeInTheDocument(),
   );
-  expect(screen.getByText("Unsaved changes")).toBeInTheDocument();
+  expect(screen.getByText("Alterações não salvas")).toBeInTheDocument();
   expect(canvasNode).toHaveStyle({ transform: "translate(165px,140px)" });
   fetchMock.mockRestore();
 });
@@ -693,16 +720,25 @@ it("opens a mobile native modal and restores focus on cancel", () => {
       this.setAttribute("open", "");
       this.querySelector<HTMLElement>("button")?.focus();
     });
+  Object.defineProperty(HTMLDialogElement.prototype, "close", {
+    configurable: true,
+    writable: true,
+    value: vi.fn(function (this: HTMLDialogElement) {
+      this.removeAttribute("open");
+    }),
+  });
   render(
     <WorkflowBuilder definition={d} onDirty={vi.fn()} onSaved={vi.fn()} />,
   );
-  const node = screen.getByRole("button", { name: "Receipt Trigger" });
+  const node = screen.getByRole("button", { name: "Gatilho de recebimento" });
   node.focus();
   fireEvent.click(node);
-  const dialog = screen.getByRole("dialog", { name: "Node configuration" });
+  const dialog = screen.getByRole("dialog", { name: "Configuração da etapa" });
   expect(dialog).toHaveAttribute("aria-modal", "true");
   expect(show).toHaveBeenCalled();
-  expect(within(dialog).getByRole("button", { name: "Close" })).toHaveFocus();
+  expect(
+    within(dialog).getByRole("button", { name: "Concluir" }),
+  ).toHaveFocus();
   fireEvent(dialog, new Event("cancel", { bubbles: false, cancelable: true }));
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   expect(node).toHaveFocus();
@@ -764,19 +800,19 @@ it("converts, edits typed condition values, saves and reopens", async () => {
   const view = render(
     <WorkflowBuilder definition={d} onDirty={vi.fn()} onSaved={onSaved} />,
   );
-  fireEvent.click(
-    screen.getByRole("button", { name: "Convert to condition workflow" }),
-  );
-  expect(screen.getByLabelText("Field path")).toHaveValue("payload");
-  fireEvent.change(screen.getByLabelText("Field path"), {
+  fireEvent.click(screen.getByRole("button", { name: "Usar condição guiada" }));
+  expect(screen.getByLabelText("Campo do evento")).toHaveValue("payload");
+  fireEvent.change(screen.getByLabelText("Campo do evento"), {
     target: { value: "" },
   });
-  expect(screen.getByRole("button", { name: "Condition" })).toHaveAttribute(
+  expect(screen.getByRole("button", { name: "Condição" })).toHaveAttribute(
     "aria-invalid",
     "true",
   );
-  expect(screen.getByRole("button", { name: "Save workflow" })).toBeDisabled();
-  fireEvent.change(screen.getByLabelText("Field path"), {
+  expect(
+    screen.getByRole("button", { name: "Salvar alterações" }),
+  ).toBeDisabled();
+  fireEvent.change(screen.getByLabelText("Campo do evento"), {
     target: { value: "data.total" },
   });
   for (const operator of [
@@ -787,28 +823,30 @@ it("converts, edits typed condition values, saves and reopens", async () => {
     "contains",
     "exists",
   ]) {
-    fireEvent.change(screen.getByLabelText("Operator"), {
+    fireEvent.change(screen.getByLabelText("Operador"), {
       target: { value: operator },
     });
-    expect(screen.getByLabelText("Operator")).toHaveValue(operator);
+    expect(screen.getByLabelText("Operador")).toHaveValue(operator);
   }
-  fireEvent.change(screen.getByLabelText("Operator"), {
+  fireEvent.change(screen.getByLabelText("Operador"), {
     target: { value: "equals" },
   });
   for (const type of ["boolean", "null", "string", "number"]) {
-    fireEvent.change(screen.getByLabelText("Expected type"), {
+    fireEvent.change(screen.getByLabelText("Tipo"), {
       target: { value: type },
     });
-    expect(screen.getByLabelText("Expected type")).toHaveValue(type);
+    expect(screen.getByLabelText("Tipo")).toHaveValue(type);
   }
-  fireEvent.change(screen.getByLabelText("Expected value"), {
+  fireEvent.change(screen.getByLabelText("Valor esperado"), {
     target: { value: "" },
   });
-  expect(screen.getByRole("button", { name: "Save workflow" })).toBeDisabled();
-  fireEvent.change(screen.getByLabelText("Expected value"), {
+  expect(
+    screen.getByRole("button", { name: "Salvar alterações" }),
+  ).toBeDisabled();
+  fireEvent.change(screen.getByLabelText("Valor esperado"), {
     target: { value: "42.5" },
   });
-  fireEvent.click(screen.getByRole("button", { name: "Save workflow" }));
+  fireEvent.click(screen.getByRole("button", { name: "Salvar alterações" }));
   await waitFor(() => expect(onSaved).toHaveBeenCalled());
   const body = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
   expect(body.expectedRevision).toBe(1);
@@ -829,14 +867,14 @@ it("converts, edits typed condition values, saves and reopens", async () => {
       onSaved={vi.fn()}
     />,
   );
-  const button = screen.getByRole("button", { name: "Condition" });
+  const button = screen.getByRole("button", { name: "Condição" });
   fireEvent.click(button);
-  expect(screen.getByLabelText("Expected value")).toHaveValue("42.5");
-  fireEvent.change(screen.getByLabelText("Operator"), {
+  expect(screen.getByLabelText("Valor esperado")).toHaveValue("42.5");
+  fireEvent.change(screen.getByLabelText("Operador"), {
     target: { value: "exists" },
   });
-  expect(screen.queryByLabelText("Expected value")).not.toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "Close" }));
+  expect(screen.queryByLabelText("Valor esperado")).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Concluir" }));
   expect(button).toHaveFocus();
   fetchMock.mockRestore();
 });
@@ -869,4 +907,123 @@ it("retains placeholder identity and positions while avoiding end ID collisions"
   expect(
     conditionDraft(graph, false, { fieldPath: "data", operator: "exists" }),
   ).toEqual(converted);
+});
+
+it("maps operator labels to canonical choices and constrains value types and defaults", () => {
+  const graph = conditionDraft(defaultGraph(), false, {
+    fieldPath: "payload",
+    operator: "exists",
+  });
+  render(
+    <WorkflowBuilder
+      definition={{ ...d, schemaVersion: 2, graph }}
+      onDirty={vi.fn()}
+      onSaved={vi.fn()}
+    />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Condição" }));
+  const operator = screen.getByLabelText("Operador");
+  for (const [label, value] of [
+    ["Existe", "exists"],
+    ["É igual a", "equals"],
+    ["É diferente de", "not_equals"],
+    ["É maior que", "greater_than"],
+    ["É menor que", "less_than"],
+    ["Contém", "contains"],
+  ]) {
+    expect(within(operator).getByRole("option", { name: label })).toHaveValue(
+      value,
+    );
+  }
+  expect(screen.queryByLabelText("Tipo")).not.toBeInTheDocument();
+  for (const [value, types, initial] of [
+    ["equals", ["string", "number", "boolean", "null"], ""],
+    ["greater_than", ["number"], "0"],
+    ["less_than", ["number"], "0"],
+    ["contains", ["string"], ""],
+    ["not_equals", ["string", "number", "boolean", "null"], ""],
+  ] as const) {
+    fireEvent.change(operator, { target: { value } });
+    expect(
+      within(screen.getByLabelText("Tipo"))
+        .getAllByRole("option")
+        .map((option) => (option as HTMLOptionElement).value),
+    ).toEqual(types);
+    expect(screen.getByLabelText("Valor esperado")).toHaveValue(initial);
+  }
+});
+
+it("associates each invalid condition input only with its own help and error", () => {
+  const graph = conditionDraft(defaultGraph(), false, {
+    fieldPath: "payload",
+    operator: "exists",
+  });
+  render(
+    <WorkflowBuilder
+      definition={{ ...d, schemaVersion: 2, graph }}
+      onDirty={vi.fn()}
+      onSaved={vi.fn()}
+    />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Condição" }));
+  fireEvent.change(screen.getByLabelText("Operador"), {
+    target: { value: "greater_than" },
+  });
+  const path = screen.getByLabelText("Campo do evento");
+  const value = screen.getByLabelText("Valor esperado");
+  fireEvent.change(path, { target: { value: "bad..path" } });
+  fireEvent.change(value, { target: { value: "-" } });
+  expect(path).toHaveAttribute("aria-invalid", "true");
+  expect(value).toHaveAttribute("aria-invalid", "true");
+  expect(path).toHaveAttribute(
+    "aria-describedby",
+    "condition-path-help condition-path-error",
+  );
+  expect(value).toHaveAttribute(
+    "aria-describedby",
+    "condition-value-help condition-value-error",
+  );
+  expect(value).toHaveValue("-");
+  fireEvent.change(path, { target: { value: "payload.x" } });
+  expect(path).not.toHaveAttribute("aria-invalid");
+  expect(value).toHaveAttribute("aria-invalid", "true");
+});
+
+it("provides complete field path guidance for every rejected constraint", () => {
+  const graph = conditionDraft(defaultGraph(), false, {
+    fieldPath: "payload",
+    operator: "exists",
+  });
+  render(
+    <WorkflowBuilder
+      definition={{ ...d, schemaVersion: 2, graph }}
+      onDirty={vi.fn()}
+      onSaved={vi.fn()}
+    />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Condição" }));
+  const path = screen.getByLabelText("Campo do evento");
+  for (const invalid of [
+    "payload.__proto__",
+    "a".repeat(65),
+    Array(9).fill("a").join("."),
+    [64, 64, 64, 62].map((n) => "a".repeat(n)).join("."),
+    "bad..path",
+  ]) {
+    fireEvent.change(path, { target: { value: invalid } });
+    expect(path).toHaveValue(invalid);
+    expect(path).toHaveAttribute("aria-invalid", "true");
+    expect(path).toHaveAttribute(
+      "aria-describedby",
+      "condition-path-help condition-path-error",
+    );
+    expect(path).toHaveAccessibleDescription(
+      /256 caracteres.*8 segmentos.*64 caracteres.*__proto__, prototype ou constructor/i,
+    );
+  }
+  const boundary = [64, 64, 64, 61].map((n) => "a".repeat(n)).join(".");
+  fireEvent.change(path, { target: { value: boundary } });
+  expect(path).toHaveValue(boundary);
+  expect(path).not.toHaveAttribute("aria-invalid");
+  expect(path).toHaveAttribute("aria-describedby", "condition-path-help");
 });

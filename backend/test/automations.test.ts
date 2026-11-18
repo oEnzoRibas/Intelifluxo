@@ -46,7 +46,7 @@ describe("automation request validation", () => {
       expect(published.required).toEqual(route.required);
       expect(publishedGraph.anyOf[0]).toEqual(routeGraph.anyOf[0]);
       expect(publishedGraph.anyOf[1].properties.version).toEqual({ const: 2 });
-      if (name !== "response") expect(published.allOf).toHaveLength(2);
+      if (name !== "response") expect(published.allOf).toHaveLength(3);
     }
   });
   it("rejects invalid configurations before accessing storage", async () => {
